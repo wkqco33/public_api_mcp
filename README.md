@@ -120,7 +120,10 @@ cp .env.example .env
 
 ## 클라이언트별 설정
 
-`config-examples/` 디렉토리에 플랫폼별 설정 예시 파일이 있습니다. `/절대경로/public-api-mcp` 부분을 실제 바이너리 경로로 교체해서 사용하세요.
+`config-examples/` 디렉토리에 플랫폼별 설정 예시 파일이 있습니다.
+
+- **stdio**: 클라이언트가 바이너리를 직접 실행. `/절대경로/public-api-mcp` 부분을 실제 경로로 교체.
+- **SSE**: 서버를 별도로 먼저 기동(`serve http`)한 뒤 클라이언트가 URL로 접속.
 
 ### Claude Desktop
 
@@ -128,6 +131,7 @@ cp .env.example .env
 - Linux: `~/.config/claude/claude_desktop_config.json`
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
+**stdio** (`config-examples/claude-desktop.json`)
 ```json
 {
   "mcpServers": {
@@ -139,12 +143,22 @@ cp .env.example .env
 }
 ```
 
-예시 파일: `config-examples/claude-desktop.json`
+**SSE** (`config-examples/claude-desktop-sse.json`)
+```json
+{
+  "mcpServers": {
+    "public-api-mcp": {
+      "url": "http://localhost:8080/sse"
+    }
+  }
+}
+```
 
 ### VS Code (GitHub Copilot)
 
 VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 생성합니다.
 
+**stdio** (`config-examples/vscode.json`)
 ```json
 {
   "servers": {
@@ -157,12 +171,23 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
 }
 ```
 
-예시 파일: `config-examples/vscode.json`
+**SSE** (`config-examples/vscode-sse.json`)
+```json
+{
+  "servers": {
+    "public-api-mcp": {
+      "type": "sse",
+      "url": "http://localhost:8080/sse"
+    }
+  }
+}
+```
 
 ### Cursor
 
 설정 파일 위치: `~/.cursor/mcp.json` (전역) 또는 `.cursor/mcp.json` (프로젝트별)
 
+**stdio** (`config-examples/cursor.json`)
 ```json
 {
   "mcpServers": {
@@ -174,12 +199,22 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
 }
 ```
 
-예시 파일: `config-examples/cursor.json`
+**SSE** (`config-examples/cursor-sse.json`)
+```json
+{
+  "mcpServers": {
+    "public-api-mcp": {
+      "url": "http://localhost:8080/sse"
+    }
+  }
+}
+```
 
 ### Gemini CLI
 
 설정 파일 위치: `~/.gemini/settings.json`
 
+**stdio** (`config-examples/gemini-cli.json`)
 ```json
 {
   "mcpServers": {
@@ -191,12 +226,22 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
 }
 ```
 
-예시 파일: `config-examples/gemini-cli.json`
+**SSE** (`config-examples/gemini-cli-sse.json`)
+```json
+{
+  "mcpServers": {
+    "public-api-mcp": {
+      "url": "http://localhost:8080/sse"
+    }
+  }
+}
+```
 
 ### Cline (VS Code 확장)
 
 VS Code `settings.json`에 추가합니다 (`Ctrl+Shift+P` → "Open User Settings JSON").
 
+**stdio** (`config-examples/cline.json`)
 ```json
 {
   "cline.mcpServers": {
@@ -210,7 +255,18 @@ VS Code `settings.json`에 추가합니다 (`Ctrl+Shift+P` → "Open User Settin
 }
 ```
 
-예시 파일: `config-examples/cline.json`
+**SSE** (`config-examples/cline-sse.json`)
+```json
+{
+  "cline.mcpServers": {
+    "public-api-mcp": {
+      "url": "http://localhost:8080/sse",
+      "disabled": false,
+      "alwaysAllow": []
+    }
+  }
+}
+```
 
 ### env 파일 경로를 별도로 지정하는 경우
 
@@ -303,12 +359,12 @@ public_api_mcp/
 ├── deploy/              # OS 서비스 배포 파일
 │   ├── public-api-mcp.service            # Linux systemd 유닛 파일
 │   └── com.wkqcosoft.public-api-mcp.plist # macOS launchd 에이전트
-├── config-examples/     # 클라이언트별 MCP 설정 예시
-│   ├── claude-desktop.json
-│   ├── vscode.json
-│   ├── cursor.json
-│   ├── gemini-cli.json
-│   └── cline.json
+├── config-examples/     # 클라이언트별 MCP 설정 예시 (stdio / SSE 각각)
+│   ├── claude-desktop.json       claude-desktop-sse.json
+│   ├── vscode.json               vscode-sse.json
+│   ├── cursor.json               cursor-sse.json
+│   ├── gemini-cli.json           gemini-cli-sse.json
+│   └── cline.json                cline-sse.json
 ├── cmd/
 │   ├── root.go          # RootCmd, 전역 플래그 (--env, --debug)
 │   ├── serve.go         # serve stdio | serve http

@@ -1,0 +1,9 @@
+{
+  "cline.mcpServers": {
+    "public-api-mcp": {
+      "url": "http://localhost:8080/sse",
+      "disabled": false,
+      "alwaysAllow": []
+    }
+  }
+}
