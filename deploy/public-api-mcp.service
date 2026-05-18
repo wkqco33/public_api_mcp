@@ -1,0 +1,38 @@
+[Unit]
+Description=Public API MCP Server
+Documentation=https://github.com/wkqcosoft/public-api-mcp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=public-api-mcp
+Group=public-api-mcp
+
+# 바이너리 경로. 변경 시 아래 ExecStart도 함께 수정
+ExecStart=/usr/local/bin/public-api-mcp serve http --addr :8080
+
+# API 키 환경변수 파일 경로 (설치 후 생성 필요)
+# 파일 포맷: KEY=VALUE (한 줄에 하나)
+EnvironmentFile=/etc/public-api-mcp/env
+
+# 비정상 종료 시 5초 후 재시작
+Restart=on-failure
+RestartSec=5s
+
+# 로그는 journald로 수집 (journalctl -u public-api-mcp)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=public-api-mcp
+
+# 최소 권한
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/public-api-mcp
+# DART 기업코드 파일 캐시 경로 (User 홈 디렉토리가 없으면 아래 경로로 override)
+# RuntimeDirectory=public-api-mcp
+
+[Install]
+WantedBy=multi-user.target

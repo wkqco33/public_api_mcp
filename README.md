@@ -243,11 +243,66 @@ time=2026-05-18T10:00:03+09:00 level=WARN msg="네이버 API 오류 [429]: rate 
 
 ---
 
+## 서비스로 실행 (백그라운드 데몬)
+
+HTTP 모드를 OS 서비스로 등록하면 부팅 시 자동 시작되고 비정상 종료 시 자동 재시작됩니다.
+`deploy/` 디렉토리에 플랫폼별 설정 파일이 있습니다.
+
+### Linux (Ubuntu / systemd)
+
+```bash
+# 1. 전용 사용자 생성
+sudo useradd -r -s /sbin/nologin public-api-mcp
+
+# 2. 환경변수 파일 생성
+sudo mkdir -p /etc/public-api-mcp
+sudo cp .env /etc/public-api-mcp/env
+sudo chmod 600 /etc/public-api-mcp/env
+sudo chown public-api-mcp:public-api-mcp /etc/public-api-mcp/env
+
+# 3. 바이너리 설치
+make install  # /usr/local/bin/public-api-mcp
+
+# 4. 서비스 파일 등록
+sudo cp deploy/public-api-mcp.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now public-api-mcp
+
+# 로그 확인
+journalctl -u public-api-mcp -f
+```
+
+### macOS (launchd)
+
+```bash
+# 1. 바이너리 설치
+make install  # /usr/local/bin/public-api-mcp
+
+# 2. 환경변수 파일 생성
+mkdir -p ~/.config/public-api-mcp
+cp .env ~/.config/public-api-mcp/env
+
+# 3. plist 파일 복사 (USERNAME을 실제 사용자명으로 교체)
+sed "s/USERNAME/$USER/g" deploy/com.wkqcosoft.public-api-mcp.plist \
+  > ~/Library/LaunchAgents/com.wkqcosoft.public-api-mcp.plist
+
+# 4. 서비스 등록 및 시작
+launchctl load ~/Library/LaunchAgents/com.wkqcosoft.public-api-mcp.plist
+
+# 중지/재시작
+launchctl unload ~/Library/LaunchAgents/com.wkqcosoft.public-api-mcp.plist
+```
+
+---
+
 ## 프로젝트 구조
 
 ```
 public_api_mcp/
 ├── main.go              # 진입점 (cmd.Execute() 호출)
+├── deploy/              # OS 서비스 배포 파일
+│   ├── public-api-mcp.service            # Linux systemd 유닛 파일
+│   └── com.wkqcosoft.public-api-mcp.plist # macOS launchd 에이전트
 ├── config-examples/     # 클라이언트별 MCP 설정 예시
 │   ├── claude-desktop.json
 │   ├── vscode.json
