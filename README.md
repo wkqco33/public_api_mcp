@@ -101,7 +101,7 @@ cp .env.example .env
 ### HTTP/SSE
 
 ```bash
-./public-api-mcp serve http --addr :8080
+./public-api-mcp serve http --addr 127.0.0.1:18080
 ```
 
 ### 커스텀 .env 파일 경로 지정
@@ -148,7 +148,7 @@ cp .env.example .env
 {
   "mcpServers": {
     "public-api-mcp": {
-      "url": "http://localhost:8080/sse"
+      "url": "http://localhost:18080/sse"
     }
   }
 }
@@ -177,7 +177,7 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
   "servers": {
     "public-api-mcp": {
       "type": "sse",
-      "url": "http://localhost:8080/sse"
+      "url": "http://localhost:18080/sse"
     }
   }
 }
@@ -204,7 +204,7 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
 {
   "mcpServers": {
     "public-api-mcp": {
-      "url": "http://localhost:8080/sse"
+      "url": "http://localhost:18080/sse"
     }
   }
 }
@@ -231,7 +231,7 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
 {
   "mcpServers": {
     "public-api-mcp": {
-      "url": "http://localhost:8080/sse"
+      "url": "http://localhost:18080/sse"
     }
   }
 }
@@ -260,7 +260,7 @@ VS Code `settings.json`에 추가합니다 (`Ctrl+Shift+P` → "Open User Settin
 {
   "cline.mcpServers": {
     "public-api-mcp": {
-      "url": "http://localhost:8080/sse",
+      "url": "http://localhost:18080/sse",
       "disabled": false,
       "alwaysAllow": []
     }
@@ -283,13 +283,13 @@ VS Code `settings.json`에 추가합니다 (`Ctrl+Shift+P` → "Open User Settin
 `--debug` 플래그를 추가하면 모든 HTTP 요청의 URL, 상태코드, 소요시간과 캐시 hit/miss 정보를 stderr에 출력합니다.
 
 ```bash
-./public-api-mcp --debug serve http --addr :8080
+./public-api-mcp --debug serve http --addr 127.0.0.1:18080
 ```
 
 출력 예시:
 
 ```
-time=2026-05-18T10:00:00+09:00 level=INFO msg="HTTP MCP 서버 시작" addr=:8080
+time=2026-05-18T10:00:00+09:00 level=INFO msg="HTTP MCP 서버 시작" addr=127.0.0.1:18080
 time=2026-05-18T10:00:01+09:00 level=DEBUG msg=HTTP method=GET url="https://openapi.naver.com/..." status=200 ms=143
 time=2026-05-18T10:00:02+09:00 level=DEBUG msg="환율 캐시 miss" date=20260518
 time=2026-05-18T10:00:03+09:00 level=WARN msg="네이버 API 오류 [429]: rate limit exceeded"
@@ -338,15 +338,51 @@ make install  # /usr/local/bin/public-api-mcp
 mkdir -p ~/.config/public-api-mcp
 cp .env ~/.config/public-api-mcp/env
 
-# 3. plist 파일 복사 (USERNAME을 실제 사용자명으로 교체)
+# 3. plist 파일 복사 (기본 내부 포트: 127.0.0.1:18080)
 sed "s/USERNAME/$USER/g" deploy/com.wkqcosoft.public-api-mcp.plist \
   > ~/Library/LaunchAgents/com.wkqcosoft.public-api-mcp.plist
 
 # 4. 서비스 등록 및 시작
-launchctl load ~/Library/LaunchAgents/com.wkqcosoft.public-api-mcp.plist
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.wkqcosoft.public-api-mcp.plist
+launchctl kickstart -k "gui/$(id -u)/com.wkqcosoft.public-api-mcp"
 
 # 중지/재시작
-launchctl unload ~/Library/LaunchAgents/com.wkqcosoft.public-api-mcp.plist
+launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.wkqcosoft.public-api-mcp.plist
+```
+
+---
+
+## nginx 앞단 구성 예시
+
+`public-api-mcp`를 `127.0.0.1:18080`에만 바인딩하고 nginx로 외부 포트를 중계할 때는, backend `Host`를 loopback으로 고정해야 Go MCP SDK의 localhost 보호와 충돌하지 않습니다.
+
+```nginx
+upstream public_api_mcp {
+    server 127.0.0.1:18080;
+    keepalive 32;
+}
+
+server {
+    listen 8095;
+    server_name _;
+
+    location / {
+        proxy_pass         http://public_api_mcp;
+        proxy_http_version 1.1;
+        proxy_redirect     off;
+
+        proxy_set_header   Host              127.0.0.1:18080;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Forwarded-Host  $host:$server_port;
+
+        proxy_request_buffering off;
+        proxy_buffering         off;
+        proxy_read_timeout      3600s;
+        proxy_send_timeout      3600s;
+    }
+}
 ```
 
 ---
