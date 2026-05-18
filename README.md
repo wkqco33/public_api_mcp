@@ -148,7 +148,11 @@ cp .env.example .env
 {
   "mcpServers": {
     "public-api-mcp": {
+<<<<<<< Updated upstream
       "url": "http://localhost:18080/sse"
+=======
+      "url": "https://api-mcp.wkqcosoft.cloud/sse"
+>>>>>>> Stashed changes
     }
   }
 }
@@ -177,7 +181,11 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
   "servers": {
     "public-api-mcp": {
       "type": "sse",
+<<<<<<< Updated upstream
       "url": "http://localhost:18080/sse"
+=======
+      "url": "https://api-mcp.wkqcosoft.cloud/sse"
+>>>>>>> Stashed changes
     }
   }
 }
@@ -204,7 +212,11 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
 {
   "mcpServers": {
     "public-api-mcp": {
+<<<<<<< Updated upstream
       "url": "http://localhost:18080/sse"
+=======
+      "url": "https://api-mcp.wkqcosoft.cloud/sse"
+>>>>>>> Stashed changes
     }
   }
 }
@@ -231,7 +243,11 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
 {
   "mcpServers": {
     "public-api-mcp": {
+<<<<<<< Updated upstream
       "url": "http://localhost:18080/sse"
+=======
+      "url": "https://api-mcp.wkqcosoft.cloud/sse"
+>>>>>>> Stashed changes
     }
   }
 }
@@ -260,7 +276,11 @@ VS Code `settings.json`에 추가합니다 (`Ctrl+Shift+P` → "Open User Settin
 {
   "cline.mcpServers": {
     "public-api-mcp": {
+<<<<<<< Updated upstream
       "url": "http://localhost:18080/sse",
+=======
+      "url": "https://api-mcp.wkqcosoft.cloud/sse",
+>>>>>>> Stashed changes
       "disabled": false,
       "alwaysAllow": []
     }

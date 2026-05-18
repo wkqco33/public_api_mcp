@@ -1,7 +1,7 @@
 {
   "cline.mcpServers": {
     "public-api-mcp": {
-      "url": "http://localhost:8080/sse",
+      "url": "https://api-mcp.wkqcosoft.cloud/sse",
       "disabled": false,
       "alwaysAllow": []
     }

@@ -34,7 +34,10 @@ var serveHTTPCmd = &cobra.Command{
 	Short: "HTTP/SSE 전송으로 서버 시작",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		s := buildServer()
-		handler := mcp.NewSSEHandler(func(_ *http.Request) *mcp.Server { return s }, nil)
+		handler := mcp.NewSSEHandler(func(_ *http.Request) *mcp.Server { return s }, &mcp.SSEOptions{
+			// 리버스 프록시 뒤에서 운영할 때 Host 헤더가 외부 도메인으로 오므로 비활성화
+			DisableLocalhostProtection: true,
+		})
 		slog.Info("HTTP MCP 서버 시작", "addr", addr)
 		return http.ListenAndServe(addr, handler)
 	},
