@@ -1,0 +1,10 @@
+{
+  "cline.mcpServers": {
+    "public-api-mcp": {
+      "command": "/절대경로/public-api-mcp",
+      "args": ["serve", "stdio"],
+      "disabled": false,
+      "alwaysAllow": []
+    }
+  }
+}
