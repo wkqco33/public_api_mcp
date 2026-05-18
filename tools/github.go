@@ -67,7 +67,10 @@ func ghGet(apiPath string) ([]byte, int, error) {
 		return nil, 0, err
 	}
 	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
+	if err != nil {
+		return nil, 0, err
+	}
 	return body, res.StatusCode, nil
 }
 
@@ -155,9 +158,13 @@ func githubGetPR(_ context.Context, _ *mcp.CallToolRequest, in githubGetPRInput)
 	}
 
 	var pr map[string]any
-	json.Unmarshal(prBody, &pr)
+	if err := json.Unmarshal(prBody, &pr); err != nil {
+		return toolError("PR 파싱 실패: %v", err), nil, nil
+	}
 	var files []map[string]any
-	json.Unmarshal(filesBody, &files)
+	if err := json.Unmarshal(filesBody, &files); err != nil {
+		return toolError("파일 목록 파싱 실패: %v", err), nil, nil
+	}
 
 	user, _ := pr["user"].(map[string]any)
 	login, _ := user["login"].(string)
@@ -242,13 +249,18 @@ func githubCreateIssue(_ context.Context, _ *mcp.CallToolRequest, in githubCreat
 		return toolError("GitHub API 요청 실패: %v", err), nil, nil
 	}
 	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 1*1024*1024))
+	if err != nil {
+		return toolError("응답 읽기 실패: %v", err), nil, nil
+	}
 	if res.StatusCode != http.StatusCreated {
 		return toolError("이슈 생성 실패 [%d]: %s", res.StatusCode, string(body)), nil, nil
 	}
 
 	var issue map[string]any
-	json.Unmarshal(body, &issue)
+	if err := json.Unmarshal(body, &issue); err != nil {
+		return toolError("이슈 응답 파싱 실패: %v", err), nil, nil
+	}
 	num, _ := issue["number"].(float64)
 	htmlURL, _ := issue["html_url"].(string)
 	return toolText(fmt.Sprintf("이슈 생성 완료: #%.0f\nURL: %s", num, htmlURL)), nil, nil

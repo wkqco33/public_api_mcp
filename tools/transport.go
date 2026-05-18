@@ -62,7 +62,10 @@ func busAPIGet(path string, params map[string]string) ([]any, error) {
 		return nil, fmt.Errorf("API 요청 실패: %v", err)
 	}
 	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
+	if err != nil {
+		return nil, fmt.Errorf("응답 읽기 실패: %v", err)
+	}
 
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
@@ -154,7 +157,10 @@ func getSubwayArrival(_ context.Context, _ *mcp.CallToolRequest, in subwayArriva
 		return toolError("API 요청 실패: %v", err), nil, nil
 	}
 	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
+	if err != nil {
+		return toolError("응답 읽기 실패: %v", err), nil, nil
+	}
 
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {

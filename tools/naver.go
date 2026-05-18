@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -171,7 +172,10 @@ func naverSearchResult(searchType, query string, display, start int, sort string
 	}
 	defer res.Body.Close()
 
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
+	if err != nil {
+		return toolError("응답 읽기 실패: %v", err), nil, nil
+	}
 	if res.StatusCode != http.StatusOK {
 		return toolError("네이버 API 오류 [%d]: %s", res.StatusCode, string(body)), nil, nil
 	}
@@ -223,9 +227,5 @@ func strVal(m map[string]any, key string) string {
 func stripHTMLTags(s string) string {
 	s = strings.ReplaceAll(s, "<b>", "")
 	s = strings.ReplaceAll(s, "</b>", "")
-	s = strings.ReplaceAll(s, "&quot;", `"`)
-	s = strings.ReplaceAll(s, "&amp;", "&")
-	s = strings.ReplaceAll(s, "&lt;", "<")
-	s = strings.ReplaceAll(s, "&gt;", ">")
-	return s
+	return html.UnescapeString(s)
 }

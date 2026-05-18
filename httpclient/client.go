@@ -3,6 +3,7 @@ package httpclient
 import (
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -26,9 +27,13 @@ func (debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
+var debugMu sync.Mutex
+
 // SetDebug는 debug 모드를 활성화/비활성화한다.
 // 활성화 시 모든 HTTP 요청의 URL, 상태코드, 소요시간이 DEBUG 레벨로 기록된다.
 func SetDebug(on bool) {
+	debugMu.Lock()
+	defer debugMu.Unlock()
 	if on {
 		Default.Transport = debugRoundTripper{}
 	} else {

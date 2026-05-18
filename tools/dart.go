@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"wkqcosoft.com/public-api-mcp/cache"
 	"wkqcosoft.com/public-api-mcp/config"
 	"wkqcosoft.com/public-api-mcp/httpclient"
 )
@@ -24,8 +25,9 @@ import (
 const dartCacheTTL = 7 * 24 * time.Hour
 
 var (
-	dartCorpCodes   map[string]string
-	dartCorpCodesMu sync.RWMutex
+	dartCorpCodes    map[string]string
+	dartCorpCodesMu  sync.RWMutex
+	corpCodeCache    = cache.New[string, string]()
 )
 
 type dartSearchInput struct {
@@ -90,13 +92,18 @@ func loadCorpCodes() (map[string]string, error) {
 	q.Set("crtfc_key", config.OpenDARTAPIKey)
 	req.URL.RawQuery = q.Encode()
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	res, err := client.Do(req)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req = req.WithContext(ctx)
+	res, err := httpclient.Default.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("기업코드 다운로드 실패: %v", err)
 	}
 	defer res.Body.Close()
-	zipData, _ := io.ReadAll(res.Body)
+	zipData, err := io.ReadAll(io.LimitReader(res.Body, 50*1024*1024)) // 50MB 제한
+	if err != nil {
+		return nil, fmt.Errorf("기업코드 응답 읽기 실패: %v", err)
+	}
 
 	zr, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
@@ -157,12 +164,17 @@ func resolveCorpCode(nameOrCode string) (string, error) {
 		}
 	}
 
+	if cached, ok := corpCodeCache.Get(s); ok {
+		return cached, nil
+	}
+
 	codes, err := loadCorpCodes()
 	if err != nil {
 		return "", err
 	}
 
 	if code, ok := codes[s]; ok {
+		corpCodeCache.Set(s, code, 24*time.Hour)
 		return code, nil
 	}
 
@@ -183,6 +195,7 @@ func resolveCorpCode(nameOrCode string) (string, error) {
 			best = m
 		}
 	}
+	corpCodeCache.Set(s, best[1], 24*time.Hour)
 	return best[1], nil
 }
 
@@ -203,7 +216,10 @@ func dartGet(endpoint string, params map[string]string) (map[string]any, error) 
 		return nil, fmt.Errorf("API 요청 실패: %v", err)
 	}
 	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
+	if err != nil {
+		return nil, fmt.Errorf("응답 읽기 실패: %v", err)
+	}
 
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {

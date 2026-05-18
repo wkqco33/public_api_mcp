@@ -85,7 +85,10 @@ func getRecommendedBooks(_ context.Context, _ *mcp.CallToolRequest, in bookInput
 		return toolError("API 요청 실패: %v", err), nil, nil
 	}
 	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
+	if err != nil {
+		return toolError("응답 읽기 실패: %v", err), nil, nil
+	}
 
 	var resp nlXMLResponse
 	if err := xml.Unmarshal(body, &resp); err != nil {

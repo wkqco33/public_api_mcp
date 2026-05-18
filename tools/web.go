@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,6 +18,15 @@ import (
 )
 
 var newsCache = cache.New[string, string]()
+
+var (
+	reScript = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
+	reStyle  = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
+	reNav    = regexp.MustCompile(`(?is)<nav[^>]*>.*?</nav>`)
+	reFooter = regexp.MustCompile(`(?is)<footer[^>]*>.*?</footer>`)
+	reHeader = regexp.MustCompile(`(?is)<header[^>]*>.*?</header>`)
+	reTag    = regexp.MustCompile(`<[^>]*>`)
+)
 
 type getNewsInput struct {
 	Topic string `json:"topic" jsonschema:"뉴스 주제 또는 키워드"`
@@ -89,8 +99,10 @@ func fetchURL(_ context.Context, _ *mcp.CallToolRequest, in fetchURLInput) (*mcp
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 
-	client := &http.Client{Timeout: 20 * time.Second}
-	res, err := client.Do(req)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	req = req.WithContext(ctx)
+	res, err := httpclient.Default.Do(req)
 	if err != nil {
 		return toolError("URL 요청 실패: %v", err), nil, nil
 	}
@@ -112,38 +124,12 @@ func fetchURL(_ context.Context, _ *mcp.CallToolRequest, in fetchURLInput) (*mcp
 	return toolText(text), nil, nil
 }
 
-// extractText: HTML에서 간단히 텍스트 추출 (script/style 제거 후 태그 제거)
 func extractText(html string) string {
-	// script, style 블록 제거
-	for _, tag := range []string{"script", "style", "nav", "footer", "header"} {
-		for {
-			open := strings.Index(strings.ToLower(html), "<"+tag)
-			if open < 0 {
-				break
-			}
-			close := strings.Index(strings.ToLower(html[open:]), "</"+tag+">")
-			if close < 0 {
-				break
-			}
-			html = html[:open] + " " + html[open+close+len("</"+tag+">"):]
-		}
-	}
-	// 태그 제거
-	var sb strings.Builder
-	inTag := false
-	for _, ch := range html {
-		switch {
-		case ch == '<':
-			inTag = true
-		case ch == '>':
-			inTag = false
-			sb.WriteRune(' ')
-		case !inTag:
-			sb.WriteRune(ch)
-		}
-	}
-	// 연속 공백 정리
-	text := sb.String()
-	words := strings.Fields(text)
-	return strings.Join(words, " ")
+	html = reScript.ReplaceAllString(html, " ")
+	html = reStyle.ReplaceAllString(html, " ")
+	html = reNav.ReplaceAllString(html, " ")
+	html = reFooter.ReplaceAllString(html, " ")
+	html = reHeader.ReplaceAllString(html, " ")
+	html = reTag.ReplaceAllString(html, " ")
+	return strings.Join(strings.Fields(html), " ")
 }

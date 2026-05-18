@@ -97,7 +97,10 @@ func httpRequest(_ context.Context, _ *mcp.CallToolRequest, in httpRequestInput)
 	}
 	defer res.Body.Close()
 
-	respBody, _ := io.ReadAll(io.LimitReader(res.Body, 4000))
+	respBody, err := io.ReadAll(io.LimitReader(res.Body, 4000))
+	if err != nil {
+		return toolError("응답 읽기 실패: %v", err), nil, nil
+	}
 	contentType := res.Header.Get("Content-Type")
 	preview := string(respBody)
 	if len(preview) > 4000 {

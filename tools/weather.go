@@ -37,6 +37,7 @@ var (
 )
 
 var weatherCache = cache.New[string, string]()
+var locationCache = cache.New[string, *kmaLocation]()
 
 var ptyMap = map[string]string{
 	"0": "없음", "1": "비", "2": "비/눈", "3": "눈",
@@ -107,7 +108,14 @@ func findLocation(name string) *kmaLocation {
 	loadKMALocations()
 	name = strings.ReplaceAll(name, "날씨", "")
 	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	if cached, ok := locationCache.Get(name); ok {
+		return cached
+	}
 	// 3단계 → 2단계 → 1단계 순서로 검색
+	var found *kmaLocation
 	for _, step := range []int{3, 2, 1} {
 		for i := range kmaLocations {
 			loc := &kmaLocations[i]
@@ -120,12 +128,17 @@ func findLocation(name string) *kmaLocation {
 			case 1:
 				field = loc.Step1
 			}
-			if name != "" && strings.Contains(field, name) {
-				return loc
+			if strings.Contains(field, name) {
+				found = loc
+				break
 			}
 		}
+		if found != nil {
+			break
+		}
 	}
-	return nil
+	locationCache.Set(name, found, 24*time.Hour)
+	return found
 }
 
 func kmaBaseTimeNcst() (string, string) {
@@ -177,7 +190,10 @@ func kmaGet(endpoint string, params map[string]string) (map[string]any, error) {
 		return nil, fmt.Errorf("API 요청 실패: %v", err)
 	}
 	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
+	if err != nil {
+		return nil, fmt.Errorf("응답 읽기 실패: %v", err)
+	}
 
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
