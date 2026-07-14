@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -26,10 +25,10 @@ func RegisterExchange(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_exchange_rates",
 		Description: "한국수출입은행 API를 통해 최신 환율 정보 조회. 매매기준율, 송금 환율 등을 확인.",
-	}, getExchangeRates)
+	}, withRecover("get_exchange_rates", getExchangeRates))
 }
 
-func getExchangeRates(_ context.Context, _ *mcp.CallToolRequest, in exchangeInput) (*mcp.CallToolResult, any, error) {
+func getExchangeRates(ctx context.Context, _ *mcp.CallToolRequest, in exchangeInput) (*mcp.CallToolResult, any, error) {
 	if config.ExchangeAPIKey == "" {
 		return toolError("EXCHANGE_API_KEY가 설정되지 않았습니다"), nil, nil
 	}
@@ -46,7 +45,7 @@ func getExchangeRates(_ context.Context, _ *mcp.CallToolRequest, in exchangeInpu
 	}
 	slog.Debug("환율 API 조회", "date", date)
 
-	result, err := fetchExchangeDate(date, config.ExchangeAPIKey, kst)
+	result, err := fetchExchangeDate(ctx, date, config.ExchangeAPIKey, kst)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}
@@ -55,8 +54,8 @@ func getExchangeRates(_ context.Context, _ *mcp.CallToolRequest, in exchangeInpu
 	return toolText(result), nil, nil
 }
 
-func fetchExchangeDate(date, apiKey string, kst *time.Location) (string, error) {
-	data, err := callExchangeAPI(date, apiKey)
+func fetchExchangeDate(ctx context.Context, date, apiKey string, kst *time.Location) (string, error) {
+	data, err := callExchangeAPI(ctx, date, apiKey)
 	if err != nil {
 		return "", err
 	}
@@ -66,7 +65,7 @@ func fetchExchangeDate(date, apiKey string, kst *time.Location) (string, error) 
 		current, _ := time.ParseInLocation("20060102", date, kst)
 		for i := 1; i <= 7; i++ {
 			prev := current.AddDate(0, 0, -i).Format("20060102")
-			data, err = callExchangeAPI(prev, apiKey)
+			data, err = callExchangeAPI(ctx, prev, apiKey)
 			if err != nil {
 				continue
 			}
@@ -93,22 +92,20 @@ func fetchExchangeDate(date, apiKey string, kst *time.Location) (string, error) 
 	return sb.String(), nil
 }
 
-func callExchangeAPI(date, apiKey string) ([]map[string]any, error) {
-	req, _ := http.NewRequest("GET", "https://oapi.koreaexim.go.kr/site/program/financial/exchangeJSON", nil)
+func callExchangeAPI(ctx context.Context, date, apiKey string) ([]map[string]any, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://oapi.koreaexim.go.kr/site/program/financial/exchangeJSON", nil)
+	if err != nil {
+		return nil, fmt.Errorf("요청 생성 실패: %w", err)
+	}
 	q := req.URL.Query()
 	q.Set("authkey", apiKey)
 	q.Set("searchdate", date)
 	q.Set("data", "AP01")
 	req.URL.RawQuery = q.Encode()
 
-	res, err := httpclient.Default.Do(req)
+	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("API 요청 실패: %v", err)
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
-	if err != nil {
-		return nil, fmt.Errorf("응답 읽기 실패: %v", err)
+		return nil, err
 	}
 
 	var data []map[string]any

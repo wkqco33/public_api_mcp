@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -31,22 +30,25 @@ func RegisterTransport(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search_bus_stop",
 		Description: "버스 정류소 이름으로 정류소 ID 검색. get_bus_arrival 사용 전에 ID를 확인하는 데 사용.",
-	}, searchBusStop)
+	}, withRecover("search_bus_stop", searchBusStop))
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_bus_arrival",
 		Description: "버스 정류소의 도착 예정 버스 정보 조회. 먼저 search_bus_stop으로 정류소 ID 확인 필요.",
-	}, getBusArrival)
+	}, withRecover("get_bus_arrival", getBusArrival))
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_subway_arrival",
 		Description: "서울 지하철역의 실시간 도착 예정 열차 정보 조회.",
-	}, getSubwayArrival)
+	}, withRecover("get_subway_arrival", getSubwayArrival))
 }
 
-func busAPIGet(path string, params map[string]string) ([]any, error) {
+func busAPIGet(ctx context.Context, path string, params map[string]string) ([]any, error) {
 	if config.PublicDataPortalAPIKey == "" {
 		return nil, fmt.Errorf("PUBLIC_DATA_PORTAL_API_KEY가 설정되지 않았습니다")
 	}
-	req, _ := http.NewRequest("GET", "http://apis.data.go.kr/1613000/"+path, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://apis.data.go.kr/1613000/"+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("요청 생성 실패: %w", err)
+	}
 	q := req.URL.Query()
 	q.Set("serviceKey", config.PublicDataPortalAPIKey)
 	q.Set("numOfRows", "10")
@@ -57,14 +59,9 @@ func busAPIGet(path string, params map[string]string) ([]any, error) {
 	}
 	req.URL.RawQuery = q.Encode()
 
-	res, err := httpclient.Default.Do(req)
+	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("API 요청 실패: %v", err)
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
-	if err != nil {
-		return nil, fmt.Errorf("응답 읽기 실패: %v", err)
+		return nil, err
 	}
 
 	var data map[string]any
@@ -84,12 +81,12 @@ func busAPIGet(path string, params map[string]string) ([]any, error) {
 	return items, nil
 }
 
-func searchBusStop(_ context.Context, _ *mcp.CallToolRequest, in busStopSearchInput) (*mcp.CallToolResult, any, error) {
+func searchBusStop(ctx context.Context, _ *mcp.CallToolRequest, in busStopSearchInput) (*mcp.CallToolResult, any, error) {
 	cityCode := in.CityCode
 	if cityCode == "" {
 		cityCode = "11"
 	}
-	items, err := busAPIGet("BusSttnInfoInqireService/getSttnNoList", map[string]string{
+	items, err := busAPIGet(ctx, "BusSttnInfoInqireService/getSttnNoList", map[string]string{
 		"cityCode": cityCode,
 		"nodeNm":   in.StopName,
 	})
@@ -112,12 +109,12 @@ func searchBusStop(_ context.Context, _ *mcp.CallToolRequest, in busStopSearchIn
 	return toolText(sb.String()), nil, nil
 }
 
-func getBusArrival(_ context.Context, _ *mcp.CallToolRequest, in busArrivalInput) (*mcp.CallToolResult, any, error) {
+func getBusArrival(ctx context.Context, _ *mcp.CallToolRequest, in busArrivalInput) (*mcp.CallToolResult, any, error) {
 	cityCode := in.CityCode
 	if cityCode == "" {
 		cityCode = "11"
 	}
-	items, err := busAPIGet("ArvlInfoInqireForOrganicVehicle/getSttnAcctoArvlPrearngeInfoList", map[string]string{
+	items, err := busAPIGet(ctx, "ArvlInfoInqireForOrganicVehicle/getSttnAcctoArvlPrearngeInfoList", map[string]string{
 		"cityCode": cityCode,
 		"nodeId":   in.NodeID,
 	})
@@ -144,22 +141,20 @@ func getBusArrival(_ context.Context, _ *mcp.CallToolRequest, in busArrivalInput
 	return toolText(sb.String()), nil, nil
 }
 
-func getSubwayArrival(_ context.Context, _ *mcp.CallToolRequest, in subwayArrivalInput) (*mcp.CallToolResult, any, error) {
+func getSubwayArrival(ctx context.Context, _ *mcp.CallToolRequest, in subwayArrivalInput) (*mcp.CallToolResult, any, error) {
 	if config.SeoulOpenAPIKey == "" {
 		return toolError("SEOUL_OPEN_API_KEY가 설정되지 않았습니다"), nil, nil
 	}
 
 	url := fmt.Sprintf("http://swopenapi.seoul.go.kr/api/subway/%s/json/realtimeStationArrival/0/10/%s",
 		config.SeoulOpenAPIKey, in.StationName)
-	req, _ := http.NewRequest("GET", url, nil)
-	res, err := httpclient.Default.Do(req)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return toolError("API 요청 실패: %v", err), nil, nil
+		return toolError("요청 생성 실패: %v", err), nil, nil
 	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
+	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
 	if err != nil {
-		return toolError("응답 읽기 실패: %v", err), nil, nil
+		return toolError("%v", err), nil, nil
 	}
 
 	var data map[string]any

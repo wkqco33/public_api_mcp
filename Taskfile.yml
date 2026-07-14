@@ -1,0 +1,76 @@
+version: '3'
+
+vars:
+  BINARY: public-api-mcp
+  PREFIX: /usr/local
+  BINDIR: '{{.PREFIX}}/bin'
+  LDFLAGS: -s -w
+
+tasks:
+  default:
+    desc: 빌드 (기본 태스크)
+    cmds:
+      - task: build
+
+  build:
+    desc: 바이너리 빌드
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BINARY}} .
+
+  clean:
+    desc: 빌드 산출물 및 테스트 캐시 정리
+    cmds:
+      - rm -f {{.BINARY}} coverage.out coverage.html
+      - go clean -testcache
+
+  install:
+    desc: "{{.BINDIR}}에 설치 (PREFIX로 경로 변경 가능)"
+    deps: [build]
+    cmds:
+      - install -d {{.BINDIR}}
+      - install -m 755 {{.BINARY}} {{.BINDIR}}/{{.BINARY}}
+
+  uninstall:
+    desc: 설치된 바이너리 제거
+    cmds:
+      - rm -f {{.BINDIR}}/{{.BINARY}}
+
+  test:
+    desc: 테스트 실행 (race detector)
+    cmds:
+      - go test -race ./...
+
+  test-cover:
+    desc: 커버리지 리포트 생성 (coverage.html)
+    cmds:
+      - go test -race -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - 'echo "커버리지 리포트: coverage.html"'
+
+  deps:
+    desc: 의존성 정리 및 다운로드
+    cmds:
+      - go mod tidy
+      - go mod download
+
+  fmt:
+    desc: 코드 포맷팅
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: go vet 실행
+    cmds:
+      - go vet ./...
+
+  run-stdio:
+    desc: stdio 전송으로 서버 실행 (Claude Desktop 용)
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} serve stdio
+
+  run-http:
+    desc: HTTP/SSE 전송으로 서버 실행 (:8080)
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} serve http --addr :8080

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -35,14 +34,14 @@ func RegisterStock(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_stock_price",
 		Description: "공공데이터포털에서 주식 시세 조회 (종가, 등락, 거래량 등).",
-	}, getStockPrice)
+	}, withRecover("get_stock_price", getStockPrice))
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_stock_analysis_data",
 		Description: "특정 종목의 최근 30일 시세 + 관련 뉴스를 종합하여 분석 데이터 제공.",
-	}, getStockAnalysisData)
+	}, withRecover("get_stock_analysis_data", getStockAnalysisData))
 }
 
-func getStockPrice(_ context.Context, _ *mcp.CallToolRequest, in stockPriceInput) (*mcp.CallToolResult, any, error) {
+func getStockPrice(ctx context.Context, _ *mcp.CallToolRequest, in stockPriceInput) (*mcp.CallToolResult, any, error) {
 	if config.PublicDataPortalAPIKey == "" {
 		return toolError("PUBLIC_DATA_PORTAL_API_KEY가 설정되지 않았습니다"), nil, nil
 	}
@@ -59,7 +58,10 @@ func getStockPrice(_ context.Context, _ *mcp.CallToolRequest, in stockPriceInput
 		numOfRows = 10
 	}
 
-	req, _ := http.NewRequest("GET", "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo", nil)
+	if err != nil {
+		return toolError("요청 생성 실패: %v", err), nil, nil
+	}
 	q := req.URL.Query()
 	q.Set("serviceKey", config.PublicDataPortalAPIKey)
 	q.Set("numOfRows", fmt.Sprintf("%d", numOfRows))
@@ -82,14 +84,9 @@ func getStockPrice(_ context.Context, _ *mcp.CallToolRequest, in stockPriceInput
 	}
 	req.URL.RawQuery = q.Encode()
 
-	res, err := httpclient.Default.Do(req)
+	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
 	if err != nil {
-		return toolError("API 요청 실패: %v", err), nil, nil
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
-	if err != nil {
-		return toolError("응답 읽기 실패: %v", err), nil, nil
+		return toolError("%v", err), nil, nil
 	}
 
 	var data map[string]any
@@ -131,13 +128,13 @@ func getStockPrice(_ context.Context, _ *mcp.CallToolRequest, in stockPriceInput
 	return toolText(result), nil, nil
 }
 
-func getStockAnalysisData(_ context.Context, _ *mcp.CallToolRequest, in stockAnalysisInput) (*mcp.CallToolResult, any, error) {
+func getStockAnalysisData(ctx context.Context, _ *mcp.CallToolRequest, in stockAnalysisInput) (*mcp.CallToolResult, any, error) {
 	kst := time.FixedZone("KST", 9*60*60)
 	now := time.Now().In(kst)
 	begin := now.AddDate(0, 0, -30).Format("20060102")
 	end := now.Format("20060102")
 
-	priceResult, _, _ := getStockPrice(context.Background(), nil, stockPriceInput{
+	priceResult, _, _ := getStockPrice(ctx, nil, stockPriceInput{
 		ItemName:  in.ItemName,
 		BeginDate: begin,
 		EndDate:   end,
@@ -150,7 +147,7 @@ func getStockAnalysisData(_ context.Context, _ *mcp.CallToolRequest, in stockAna
 		}
 	}
 
-	newsResult, _, _ := getNews(context.Background(), nil, getNewsInput{Topic: in.ItemName})
+	newsResult, _, _ := getNews(ctx, nil, getNewsInput{Topic: in.ItemName})
 	newsText := ""
 	if newsResult != nil && len(newsResult.Content) > 0 {
 		if tc, ok := newsResult.Content[0].(*mcp.TextContent); ok {

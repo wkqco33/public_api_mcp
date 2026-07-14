@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -38,12 +37,12 @@ type githubRepoOnlyInput struct {
 }
 
 func RegisterGitHub(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "github_list_repos", Description: "GitHub 저장소 목록 조회. username 미지정 시 내 저장소(토큰 필요)."}, githubListRepos)
-	mcp.AddTool(s, &mcp.Tool{Name: "github_list_prs", Description: "GitHub Pull Request 목록 조회."}, githubListPRs)
-	mcp.AddTool(s, &mcp.Tool{Name: "github_get_pr", Description: "GitHub PR 상세 정보와 변경 파일 목록 조회."}, githubGetPR)
-	mcp.AddTool(s, &mcp.Tool{Name: "github_list_issues", Description: "GitHub 이슈 목록 조회 (PR 제외)."}, githubListIssues)
-	mcp.AddTool(s, &mcp.Tool{Name: "github_create_issue", Description: "GitHub 이슈 생성. GITHUB_TOKEN이 필요합니다."}, githubCreateIssue)
-	mcp.AddTool(s, &mcp.Tool{Name: "github_workflow_runs", Description: "GitHub Actions 워크플로우 실행 내역 조회."}, githubWorkflowRuns)
+	mcp.AddTool(s, &mcp.Tool{Name: "github_list_repos", Description: "GitHub 저장소 목록 조회. username 미지정 시 내 저장소(토큰 필요)."}, withRecover("github_list_repos", githubListRepos))
+	mcp.AddTool(s, &mcp.Tool{Name: "github_list_prs", Description: "GitHub Pull Request 목록 조회."}, withRecover("github_list_prs", githubListPRs))
+	mcp.AddTool(s, &mcp.Tool{Name: "github_get_pr", Description: "GitHub PR 상세 정보와 변경 파일 목록 조회."}, withRecover("github_get_pr", githubGetPR))
+	mcp.AddTool(s, &mcp.Tool{Name: "github_list_issues", Description: "GitHub 이슈 목록 조회 (PR 제외)."}, withRecover("github_list_issues", githubListIssues))
+	mcp.AddTool(s, &mcp.Tool{Name: "github_create_issue", Description: "GitHub 이슈 생성. GITHUB_TOKEN이 필요합니다."}, withRecover("github_create_issue", githubCreateIssue))
+	mcp.AddTool(s, &mcp.Tool{Name: "github_workflow_runs", Description: "GitHub Actions 워크플로우 실행 내역 조회."}, withRecover("github_workflow_runs", githubWorkflowRuns))
 }
 
 func ghHeaders() map[string]string {
@@ -57,24 +56,18 @@ func ghHeaders() map[string]string {
 	return h
 }
 
-func ghGet(apiPath string) ([]byte, int, error) {
-	req, _ := http.NewRequest("GET", "https://api.github.com"+apiPath, nil)
+func ghGet(ctx context.Context, apiPath string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com"+apiPath, nil)
+	if err != nil {
+		return nil, 0, err
+	}
 	for k, v := range ghHeaders() {
 		req.Header.Set(k, v)
 	}
-	res, err := httpclient.Default.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
-	if err != nil {
-		return nil, 0, err
-	}
-	return body, res.StatusCode, nil
+	return httpclient.FetchBody(req, maxAPIBodyBytes)
 }
 
-func githubListRepos(_ context.Context, _ *mcp.CallToolRequest, in githubListReposInput) (*mcp.CallToolResult, any, error) {
+func githubListRepos(ctx context.Context, _ *mcp.CallToolRequest, in githubListReposInput) (*mcp.CallToolResult, any, error) {
 	if in.Username == "" && config.GitHubToken == "" {
 		return toolError("내 저장소 조회는 GITHUB_TOKEN이 필요합니다"), nil, nil
 	}
@@ -83,7 +76,7 @@ func githubListRepos(_ context.Context, _ *mcp.CallToolRequest, in githubListRep
 		path = fmt.Sprintf("/users/%s/repos?per_page=30&sort=updated", in.Username)
 	}
 
-	body, code, err := ghGet(path)
+	body, code, err := ghGet(ctx, path)
 	if err != nil {
 		return toolError("GitHub API 요청 실패: %v", err), nil, nil
 	}
@@ -112,12 +105,12 @@ func githubListRepos(_ context.Context, _ *mcp.CallToolRequest, in githubListRep
 	return toolText(sb.String()), nil, nil
 }
 
-func githubListPRs(_ context.Context, _ *mcp.CallToolRequest, in githubRepoStateInput) (*mcp.CallToolResult, any, error) {
+func githubListPRs(ctx context.Context, _ *mcp.CallToolRequest, in githubRepoStateInput) (*mcp.CallToolResult, any, error) {
 	state := in.State
 	if state == "" {
 		state = "open"
 	}
-	body, code, err := ghGet(fmt.Sprintf("/repos/%s/pulls?state=%s&per_page=20", in.Repo, state))
+	body, code, err := ghGet(ctx, fmt.Sprintf("/repos/%s/pulls?state=%s&per_page=20", in.Repo, state))
 	if err != nil {
 		return toolError("GitHub API 요청 실패: %v", err), nil, nil
 	}
@@ -143,8 +136,8 @@ func githubListPRs(_ context.Context, _ *mcp.CallToolRequest, in githubRepoState
 	return toolText(sb.String()), nil, nil
 }
 
-func githubGetPR(_ context.Context, _ *mcp.CallToolRequest, in githubGetPRInput) (*mcp.CallToolResult, any, error) {
-	prBody, code, err := ghGet(fmt.Sprintf("/repos/%s/pulls/%d", in.Repo, in.PRNumber))
+func githubGetPR(ctx context.Context, _ *mcp.CallToolRequest, in githubGetPRInput) (*mcp.CallToolResult, any, error) {
+	prBody, code, err := ghGet(ctx, fmt.Sprintf("/repos/%s/pulls/%d", in.Repo, in.PRNumber))
 	if err != nil {
 		return toolError("GitHub API 요청 실패: %v", err), nil, nil
 	}
@@ -152,7 +145,7 @@ func githubGetPR(_ context.Context, _ *mcp.CallToolRequest, in githubGetPRInput)
 		return toolError("GitHub API 오류 [%d]: %s", code, string(prBody)), nil, nil
 	}
 
-	filesBody, code2, err := ghGet(fmt.Sprintf("/repos/%s/pulls/%d/files?per_page=30", in.Repo, in.PRNumber))
+	filesBody, code2, err := ghGet(ctx, fmt.Sprintf("/repos/%s/pulls/%d/files?per_page=30", in.Repo, in.PRNumber))
 	if err != nil || code2 != http.StatusOK {
 		return toolError("파일 목록 조회 실패"), nil, nil
 	}
@@ -195,12 +188,12 @@ func githubGetPR(_ context.Context, _ *mcp.CallToolRequest, in githubGetPRInput)
 	return toolText(sb.String()), nil, nil
 }
 
-func githubListIssues(_ context.Context, _ *mcp.CallToolRequest, in githubRepoStateInput) (*mcp.CallToolResult, any, error) {
+func githubListIssues(ctx context.Context, _ *mcp.CallToolRequest, in githubRepoStateInput) (*mcp.CallToolResult, any, error) {
 	state := in.State
 	if state == "" {
 		state = "open"
 	}
-	body, code, err := ghGet(fmt.Sprintf("/repos/%s/issues?state=%s&per_page=20", in.Repo, state))
+	body, code, err := ghGet(ctx, fmt.Sprintf("/repos/%s/issues?state=%s&per_page=20", in.Repo, state))
 	if err != nil {
 		return toolError("GitHub API 요청 실패: %v", err), nil, nil
 	}
@@ -232,29 +225,27 @@ func githubListIssues(_ context.Context, _ *mcp.CallToolRequest, in githubRepoSt
 	return toolText(sb.String()), nil, nil
 }
 
-func githubCreateIssue(_ context.Context, _ *mcp.CallToolRequest, in githubCreateIssueInput) (*mcp.CallToolResult, any, error) {
+func githubCreateIssue(ctx context.Context, _ *mcp.CallToolRequest, in githubCreateIssueInput) (*mcp.CallToolResult, any, error) {
 	if config.GitHubToken == "" {
 		return toolError("GITHUB_TOKEN이 설정되지 않았습니다"), nil, nil
 	}
 
 	payload, _ := json.Marshal(map[string]string{"title": in.Title, "body": in.Body})
-	req, _ := http.NewRequest("POST", fmt.Sprintf("https://api.github.com/repos/%s/issues", in.Repo), strings.NewReader(string(payload)))
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("https://api.github.com/repos/%s/issues", in.Repo), strings.NewReader(string(payload)))
+	if err != nil {
+		return toolError("요청 생성 실패: %v", err), nil, nil
+	}
 	for k, v := range ghHeaders() {
 		req.Header.Set(k, v)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	res, err := httpclient.Default.Do(req)
+	body, status, err := httpclient.FetchBody(req, 1*1024*1024)
 	if err != nil {
-		return toolError("GitHub API 요청 실패: %v", err), nil, nil
+		return toolError("%v", err), nil, nil
 	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 1*1024*1024))
-	if err != nil {
-		return toolError("응답 읽기 실패: %v", err), nil, nil
-	}
-	if res.StatusCode != http.StatusCreated {
-		return toolError("이슈 생성 실패 [%d]: %s", res.StatusCode, string(body)), nil, nil
+	if status != http.StatusCreated {
+		return toolError("이슈 생성 실패 [%d]: %s", status, string(body)), nil, nil
 	}
 
 	var issue map[string]any
@@ -266,8 +257,8 @@ func githubCreateIssue(_ context.Context, _ *mcp.CallToolRequest, in githubCreat
 	return toolText(fmt.Sprintf("이슈 생성 완료: #%.0f\nURL: %s", num, htmlURL)), nil, nil
 }
 
-func githubWorkflowRuns(_ context.Context, _ *mcp.CallToolRequest, in githubRepoOnlyInput) (*mcp.CallToolResult, any, error) {
-	body, code, err := ghGet(fmt.Sprintf("/repos/%s/actions/runs?per_page=10", in.Repo))
+func githubWorkflowRuns(ctx context.Context, _ *mcp.CallToolRequest, in githubRepoOnlyInput) (*mcp.CallToolResult, any, error) {
+	body, code, err := ghGet(ctx, fmt.Sprintf("/repos/%s/actions/runs?per_page=10", in.Repo))
 	if err != nil {
 		return toolError("GitHub API 요청 실패: %v", err), nil, nil
 	}

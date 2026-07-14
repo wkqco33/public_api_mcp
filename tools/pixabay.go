@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -23,10 +22,10 @@ func RegisterPixabay(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search_pixabay_images",
 		Description: "Pixabay에서 이미지를 검색합니다. 이미지 URL, 태그, 작성자 정보를 반환.",
-	}, searchPixabayImages)
+	}, withRecover("search_pixabay_images", searchPixabayImages))
 }
 
-func searchPixabayImages(_ context.Context, _ *mcp.CallToolRequest, in pixabayInput) (*mcp.CallToolResult, any, error) {
+func searchPixabayImages(ctx context.Context, _ *mcp.CallToolRequest, in pixabayInput) (*mcp.CallToolResult, any, error) {
 	if config.PixabayAPIKey == "" {
 		return toolError("PIXABAY_API_KEY가 설정되지 않았습니다"), nil, nil
 	}
@@ -43,7 +42,10 @@ func searchPixabayImages(_ context.Context, _ *mcp.CallToolRequest, in pixabayIn
 		imageType = "all"
 	}
 
-	req, _ := http.NewRequest("GET", "https://pixabay.com/api/", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://pixabay.com/api/", nil)
+	if err != nil {
+		return toolError("요청 생성 실패: %v", err), nil, nil
+	}
 	q := req.URL.Query()
 	q.Set("key", config.PixabayAPIKey)
 	q.Set("q", in.Query)
@@ -52,18 +54,12 @@ func searchPixabayImages(_ context.Context, _ *mcp.CallToolRequest, in pixabayIn
 	q.Set("safesearch", "true")
 	req.URL.RawQuery = q.Encode()
 
-	res, err := httpclient.Default.Do(req)
+	body, status, err := httpclient.FetchBody(req, maxAPIBodyBytes)
 	if err != nil {
-		return toolError("API 요청 실패: %v", err), nil, nil
+		return toolError("%v", err), nil, nil
 	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
-	if err != nil {
-		return toolError("응답 읽기 실패: %v", err), nil, nil
-	}
-
-	if res.StatusCode != http.StatusOK {
-		return toolError("Pixabay API 오류 [%d]: %s", res.StatusCode, string(body)), nil, nil
+	if status != http.StatusOK {
+		return toolError("Pixabay API 오류 [%d]: %s", status, string(body)), nil, nil
 	}
 
 	var data map[string]any
@@ -88,8 +84,9 @@ func searchPixabayImages(_ context.Context, _ *mcp.CallToolRequest, in pixabayIn
 	var results []imageResult
 	for _, raw := range hits {
 		hit, _ := raw.(map[string]any)
+		id, _ := hit["id"].(float64)
 		results = append(results, imageResult{
-			ID:           hit["id"].(float64),
+			ID:           id,
 			PreviewURL:   stringVal(hit, "previewURL"),
 			WebformatURL: stringVal(hit, "webformatURL"),
 			LargeURL:     stringVal(hit, "largeImageURL"),

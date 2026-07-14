@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -51,10 +50,10 @@ func RegisterRealEstate(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_real_estate_data",
 		Description: "부동산 실거래가 정보 조회. 아파트/연립다세대 매매·전월세 거래 내역 조회.",
-	}, getRealEstateData)
+	}, withRecover("get_real_estate_data", getRealEstateData))
 }
 
-func getRealEstateData(_ context.Context, _ *mcp.CallToolRequest, in realEstateInput) (*mcp.CallToolResult, any, error) {
+func getRealEstateData(ctx context.Context, _ *mcp.CallToolRequest, in realEstateInput) (*mcp.CallToolResult, any, error) {
 	if config.PublicDataPortalAPIKey == "" {
 		return toolError("PUBLIC_DATA_PORTAL_API_KEY가 설정되지 않았습니다"), nil, nil
 	}
@@ -69,7 +68,10 @@ func getRealEstateData(_ context.Context, _ *mcp.CallToolRequest, in realEstateI
 		numOfRows = 10
 	}
 
-	req, _ := http.NewRequest("GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return toolError("요청 생성 실패: %v", err), nil, nil
+	}
 	q := req.URL.Query()
 	q.Set("serviceKey", config.PublicDataPortalAPIKey)
 	q.Set("LAWD_CD", in.LawdCd)
@@ -78,14 +80,9 @@ func getRealEstateData(_ context.Context, _ *mcp.CallToolRequest, in realEstateI
 	q.Set("numOfRows", fmt.Sprintf("%d", numOfRows))
 	req.URL.RawQuery = q.Encode()
 
-	res, err := httpclient.Default.Do(req)
+	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
 	if err != nil {
-		return toolError("API 요청 실패: %v", err), nil, nil
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
-	if err != nil {
-		return toolError("응답 읽기 실패: %v", err), nil, nil
+		return toolError("%v", err), nil, nil
 	}
 
 	var xmlRes xmlResponse

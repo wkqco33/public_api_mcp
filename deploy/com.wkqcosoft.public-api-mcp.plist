@@ -14,7 +14,7 @@
         <string>serve</string>
         <string>http</string>
         <string>--addr</string>
-        <string>:8080</string>
+        <string>127.0.0.1:18080</string>
     </array>
 
     <!-- 로그인 시 자동 시작 -->

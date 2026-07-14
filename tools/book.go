@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -14,10 +13,10 @@ import (
 )
 
 var bookCategoryMap = map[string]string{
-	"문학":    "11",
-	"인문과학":  "6",
-	"사회과학":  "5",
-	"자연과학":  "4",
+	"문학":   "11",
+	"인문과학": "6",
+	"사회과학": "5",
+	"자연과학": "4",
 }
 
 type bookInput struct {
@@ -29,7 +28,7 @@ type bookInput struct {
 }
 
 type nlXMLResponse struct {
-	TotalCount string    `xml:"totalCount"`
+	TotalCount string      `xml:"totalCount"`
 	Items      []nlXMLItem `xml:"item"`
 }
 
@@ -47,10 +46,10 @@ func RegisterBook(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_recommended_books",
 		Description: "국립중앙도서관 사서 추천 도서 목록 조회. 분류별 추천 도서를 확인할 때 사용.",
-	}, getRecommendedBooks)
+	}, withRecover("get_recommended_books", getRecommendedBooks))
 }
 
-func getRecommendedBooks(_ context.Context, _ *mcp.CallToolRequest, in bookInput) (*mcp.CallToolResult, any, error) {
+func getRecommendedBooks(ctx context.Context, _ *mcp.CallToolRequest, in bookInput) (*mcp.CallToolResult, any, error) {
 	if config.NationalLibraryAPIKey == "" {
 		return toolError("NATIONAL_LIBRARY_API_KEY가 설정되지 않았습니다"), nil, nil
 	}
@@ -64,7 +63,10 @@ func getRecommendedBooks(_ context.Context, _ *mcp.CallToolRequest, in bookInput
 		endNum = 5
 	}
 
-	req, _ := http.NewRequest("GET", "https://nl.go.kr/NL/search/openApi/saseoApi.do", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://nl.go.kr/NL/search/openApi/saseoApi.do", nil)
+	if err != nil {
+		return toolError("요청 생성 실패: %v", err), nil, nil
+	}
 	q := req.URL.Query()
 	q.Set("Key", config.NationalLibraryAPIKey)
 	q.Set("startRowNumApi", fmt.Sprintf("%d", startNum))
@@ -80,14 +82,9 @@ func getRecommendedBooks(_ context.Context, _ *mcp.CallToolRequest, in bookInput
 	}
 	req.URL.RawQuery = q.Encode()
 
-	res, err := httpclient.Default.Do(req)
+	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
 	if err != nil {
-		return toolError("API 요청 실패: %v", err), nil, nil
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
-	if err != nil {
-		return toolError("응답 읽기 실패: %v", err), nil, nil
+		return toolError("%v", err), nil, nil
 	}
 
 	var resp nlXMLResponse

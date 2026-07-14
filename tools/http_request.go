@@ -5,28 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-var blockedHosts = regexp.MustCompile(
-	`(?i)^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0` +
-		`|10\.\d+\.\d+\.\d+` +
-		`|192\.168\.\d+\.\d+` +
-		`|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+` +
-		`|169\.254\.\d+\.\d+` +
-		`|::1|fc00:|fe80:)`,
-)
-
 var allowedMethods = map[string]bool{
 	"GET": true, "POST": true, "PUT": true,
 	"DELETE": true, "PATCH": true, "HEAD": true, "OPTIONS": true,
 }
+
+var allowedSchemes = map[string]bool{"http": true, "https": true}
 
 type httpRequestInput struct {
 	URL     string `json:"url" jsonschema:"요청 URL"`
@@ -40,10 +33,54 @@ func RegisterHTTPRequest(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "http_request",
 		Description: "임의의 HTTP 요청(GET/POST/PUT/DELETE 등)을 보내고 응답을 반환. API 테스트, webhook 호출에 사용. 내부 네트워크 주소는 차단됨.",
-	}, httpRequest)
+	}, withRecover("http_request", httpRequest))
 }
 
-func httpRequest(_ context.Context, _ *mcp.CallToolRequest, in httpRequestInput) (*mcp.CallToolResult, any, error) {
+// isBlockedIP는 사설망·루프백·링크로컬 등 내부용으로 예약된 주소인지 판별한다.
+func isBlockedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast()
+}
+
+// safeDialContext는 호스트명을 실제로 접속하기 직전 시점에 IP로 resolve하여 검사한다.
+// 검사(resolve)와 접속을 하나의 원자적 단계로 묶어 DNS 리바인딩(TOCTOU)을 막고,
+// http.Transport의 DialContext로 등록되므로 리다이렉트로 이어지는 모든 hop에도
+// 동일하게 적용되어 "허용된 외부 URL이 내부 주소로 302 리다이렉트"하는 우회도 차단한다.
+func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+
+	if ip := net.ParseIP(host); ip != nil {
+		if isBlockedIP(ip) {
+			return nil, fmt.Errorf("내부 네트워크 주소로의 요청은 허용되지 않습니다: %s", ip)
+		}
+		return dialer.DialContext(ctx, network, addr)
+	}
+
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, fmt.Errorf("호스트를 확인할 수 없습니다: %s", host)
+	}
+	var chosen net.IP
+	for _, ip := range ips {
+		if isBlockedIP(ip) {
+			return nil, fmt.Errorf("내부 네트워크 주소로의 요청은 허용되지 않습니다: %s", host)
+		}
+		if chosen == nil {
+			chosen = ip
+		}
+	}
+	if chosen == nil {
+		return nil, fmt.Errorf("호스트를 확인할 수 없습니다: %s", host)
+	}
+	return dialer.DialContext(ctx, network, net.JoinHostPort(chosen.String(), port))
+}
+
+func httpRequest(ctx context.Context, _ *mcp.CallToolRequest, in httpRequestInput) (*mcp.CallToolResult, any, error) {
 	method := strings.ToUpper(in.Method)
 	if method == "" {
 		method = "GET"
@@ -53,8 +90,8 @@ func httpRequest(_ context.Context, _ *mcp.CallToolRequest, in httpRequestInput)
 	}
 
 	parsed, err := url.Parse(in.URL)
-	if err != nil || blockedHosts.MatchString(parsed.Hostname()) {
-		return toolError("내부 네트워크 주소로의 요청은 허용되지 않습니다"), nil, nil
+	if err != nil || !allowedSchemes[strings.ToLower(parsed.Scheme)] {
+		return toolError("http 또는 https URL만 허용됩니다"), nil, nil
 	}
 
 	var bodyReader io.Reader
@@ -66,9 +103,12 @@ func httpRequest(_ context.Context, _ *mcp.CallToolRequest, in httpRequestInput)
 	if timeout <= 0 {
 		timeout = 30
 	}
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
+	client := &http.Client{
+		Timeout:   time.Duration(timeout) * time.Second,
+		Transport: &http.Transport{DialContext: safeDialContext},
+	}
 
-	req, err := http.NewRequest(method, in.URL, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, in.URL, bodyReader)
 	if err != nil {
 		return toolError("요청 생성 실패: %v", err), nil, nil
 	}

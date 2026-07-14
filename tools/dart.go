@@ -25,9 +25,9 @@ import (
 const dartCacheTTL = 7 * 24 * time.Hour
 
 var (
-	dartCorpCodes    map[string]string
-	dartCorpCodesMu  sync.RWMutex
-	corpCodeCache    = cache.New[string, string]()
+	dartCorpCodes   map[string]string
+	dartCorpCodesMu sync.RWMutex
+	corpCodeCache   = cache.New[string, string]()
 )
 
 type dartSearchInput struct {
@@ -45,11 +45,11 @@ func RegisterDART(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search_dart_company",
 		Description: "DART에서 기업명으로 기업코드·기업개황(대표자, 주소, 업종 등) 조회.",
-	}, searchDARTCompany)
+	}, withRecover("search_dart_company", searchDARTCompany))
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_dart_disclosures",
 		Description: "기업의 DART 공시 목록 조회 (사업보고서, 분기보고서 등).",
-	}, getDARTDisclosures)
+	}, withRecover("get_dart_disclosures", getDARTDisclosures))
 }
 
 func dartCachePath() string {
@@ -87,22 +87,22 @@ func loadCorpCodes() (map[string]string, error) {
 	}
 
 	slog.Info("DART 기업코드 다운로드 중")
-	req, _ := http.NewRequest("GET", "https://opendart.fss.or.kr/api/corpCode.xml", nil)
+	// 여러 요청이 공유하는 프로세스 전역 캐시를 채우는 백그라운드성 다운로드이므로
+	// 특정 호출자의 컨텍스트가 아닌 자체 타임아웃으로 독립 실행한다 — 첫 호출자의
+	// 요청이 취소돼도 캐시를 기다리는 다른 동시 호출자에 영향이 없어야 하기 때문.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://opendart.fss.or.kr/api/corpCode.xml", nil)
+	if err != nil {
+		return nil, fmt.Errorf("요청 생성 실패: %w", err)
+	}
 	q := req.URL.Query()
 	q.Set("crtfc_key", config.OpenDARTAPIKey)
 	req.URL.RawQuery = q.Encode()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	req = req.WithContext(ctx)
-	res, err := httpclient.Default.Do(req)
+	zipData, _, err := httpclient.FetchBody(req, 50*1024*1024) // 50MB 제한
 	if err != nil {
-		return nil, fmt.Errorf("기업코드 다운로드 실패: %v", err)
-	}
-	defer res.Body.Close()
-	zipData, err := io.ReadAll(io.LimitReader(res.Body, 50*1024*1024)) // 50MB 제한
-	if err != nil {
-		return nil, fmt.Errorf("기업코드 응답 읽기 실패: %v", err)
+		return nil, fmt.Errorf("기업코드 다운로드 실패: %w", err)
 	}
 
 	zr, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
@@ -199,11 +199,14 @@ func resolveCorpCode(nameOrCode string) (string, error) {
 	return best[1], nil
 }
 
-func dartGet(endpoint string, params map[string]string) (map[string]any, error) {
+func dartGet(ctx context.Context, endpoint string, params map[string]string) (map[string]any, error) {
 	if config.OpenDARTAPIKey == "" {
 		return nil, fmt.Errorf("OPENDART_API_KEY가 설정되지 않았습니다")
 	}
-	req, _ := http.NewRequest("GET", "https://opendart.fss.or.kr"+endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://opendart.fss.or.kr"+endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("요청 생성 실패: %w", err)
+	}
 	q := req.URL.Query()
 	q.Set("crtfc_key", config.OpenDARTAPIKey)
 	for k, v := range params {
@@ -211,14 +214,9 @@ func dartGet(endpoint string, params map[string]string) (map[string]any, error) 
 	}
 	req.URL.RawQuery = q.Encode()
 
-	res, err := httpclient.Default.Do(req)
+	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("API 요청 실패: %v", err)
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
-	if err != nil {
-		return nil, fmt.Errorf("응답 읽기 실패: %v", err)
+		return nil, err
 	}
 
 	var data map[string]any
@@ -232,13 +230,13 @@ func dartGet(endpoint string, params map[string]string) (map[string]any, error) 
 	return data, nil
 }
 
-func searchDARTCompany(_ context.Context, _ *mcp.CallToolRequest, in dartSearchInput) (*mcp.CallToolResult, any, error) {
+func searchDARTCompany(ctx context.Context, _ *mcp.CallToolRequest, in dartSearchInput) (*mcp.CallToolResult, any, error) {
 	corpCode, err := resolveCorpCode(in.CompanyName)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}
 
-	data, err := dartGet("/api/company.json", map[string]string{"corp_code": corpCode})
+	data, err := dartGet(ctx, "/api/company.json", map[string]string{"corp_code": corpCode})
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}
@@ -263,7 +261,7 @@ func searchDARTCompany(_ context.Context, _ *mcp.CallToolRequest, in dartSearchI
 	return toolText(sb.String()), nil, nil
 }
 
-func getDARTDisclosures(_ context.Context, _ *mcp.CallToolRequest, in dartDisclosuresInput) (*mcp.CallToolResult, any, error) {
+func getDARTDisclosures(ctx context.Context, _ *mcp.CallToolRequest, in dartDisclosuresInput) (*mcp.CallToolResult, any, error) {
 	corpCode, err := resolveCorpCode(in.CompanyName)
 	if err != nil {
 		return toolError("%v", err), nil, nil
@@ -274,8 +272,8 @@ func getDARTDisclosures(_ context.Context, _ *mcp.CallToolRequest, in dartDisclo
 		numOfRows = 10
 	}
 	params := map[string]string{
-		"corp_code": corpCode,
-		"page_no":   "1",
+		"corp_code":  corpCode,
+		"page_no":    "1",
 		"page_count": fmt.Sprintf("%d", numOfRows),
 	}
 	if in.StartDate != "" {
@@ -285,7 +283,7 @@ func getDARTDisclosures(_ context.Context, _ *mcp.CallToolRequest, in dartDisclo
 		params["end_de"] = in.EndDate
 	}
 
-	data, err := dartGet("/api/list.json", params)
+	data, err := dartGet(ctx, "/api/list.json", params)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}

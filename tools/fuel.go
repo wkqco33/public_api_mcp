@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,18 +29,21 @@ func RegisterFuel(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_fuel_avg_price",
 		Description: "전국 현재 주유소 평균가격 조회 (오피넷). prodcd 미입력 시 모든 제품 조회.",
-	}, getFuelAvgPrice)
+	}, withRecover("get_fuel_avg_price", getFuelAvgPrice))
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_fuel_sido_price",
 		Description: "시도별 주유소 평균가격 조회 (오피넷).",
-	}, getFuelSidoPrice)
+	}, withRecover("get_fuel_sido_price", getFuelSidoPrice))
 }
 
-func opinetGet(endpoint string, params map[string]string) (map[string]any, error) {
+func opinetGet(ctx context.Context, endpoint string, params map[string]string) (map[string]any, error) {
 	if config.OpinetAPIKey == "" {
 		return nil, fmt.Errorf("OPINET_API_KEY가 설정되지 않았습니다")
 	}
-	req, _ := http.NewRequest("GET", "https://www.opinet.co.kr/api/"+endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.opinet.co.kr/api/"+endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("요청 생성 실패: %w", err)
+	}
 	q := req.URL.Query()
 	q.Set("code", config.OpinetAPIKey)
 	q.Set("out", "json")
@@ -50,14 +52,9 @@ func opinetGet(endpoint string, params map[string]string) (map[string]any, error
 	}
 	req.URL.RawQuery = q.Encode()
 
-	res, err := httpclient.Default.Do(req)
+	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("API 요청 실패: %v", err)
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 5*1024*1024))
-	if err != nil {
-		return nil, fmt.Errorf("응답 읽기 실패: %v", err)
+		return nil, err
 	}
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
@@ -88,12 +85,12 @@ func diffStr(diff any) string {
 	return "→0"
 }
 
-func getFuelAvgPrice(_ context.Context, _ *mcp.CallToolRequest, in fuelAvgInput) (*mcp.CallToolResult, any, error) {
+func getFuelAvgPrice(ctx context.Context, _ *mcp.CallToolRequest, in fuelAvgInput) (*mcp.CallToolResult, any, error) {
 	params := map[string]string{}
 	if in.Prodcd != "" {
 		params["prodcd"] = in.Prodcd
 	}
-	data, err := opinetGet("avgAllPrice.do", params)
+	data, err := opinetGet(ctx, "avgAllPrice.do", params)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}
@@ -127,7 +124,7 @@ type fuelSidoInput struct {
 	Prodcd string `json:"prodcd,omitempty" jsonschema:"제품코드 (생략 시 전체)"`
 }
 
-func getFuelSidoPrice(_ context.Context, _ *mcp.CallToolRequest, in fuelSidoInput) (*mcp.CallToolResult, any, error) {
+func getFuelSidoPrice(ctx context.Context, _ *mcp.CallToolRequest, in fuelSidoInput) (*mcp.CallToolResult, any, error) {
 	params := map[string]string{}
 	if in.Sido != "" {
 		params["sido"] = in.Sido
@@ -135,7 +132,7 @@ func getFuelSidoPrice(_ context.Context, _ *mcp.CallToolRequest, in fuelSidoInpu
 	if in.Prodcd != "" {
 		params["prodcd"] = in.Prodcd
 	}
-	data, err := opinetGet("avgSidoPrice.do", params)
+	data, err := opinetGet(ctx, "avgSidoPrice.do", params)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}

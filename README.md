@@ -13,7 +13,7 @@
 | 환율 | `get_exchange_rates` | `EXCHANGE_API_KEY` |
 | 유가 | `get_fuel_avg_price`, `get_fuel_sido_price` | `OPINET_API_KEY` |
 | 주식 | `get_stock_price`, `get_stock_analysis_data` | `PUBLIC_DATA_PORTAL_API_KEY` |
-| 부동산 | `get_real_estate_transactions` | `PUBLIC_DATA_PORTAL_API_KEY` |
+| 부동산 | `get_real_estate_data` | `PUBLIC_DATA_PORTAL_API_KEY` |
 | 교통 | `search_bus_stop`, `get_bus_arrival`, `get_subway_arrival` | `PUBLIC_DATA_PORTAL_API_KEY`, `SEOUL_OPEN_API_KEY` |
 | 날씨 | `get_current_weather`, `get_weather_forecast` | `KMA_WEATHER_API_KEY` |
 | DART 공시 | `search_dart_company`, `get_dart_disclosures` | `OPENDART_API_KEY` |
@@ -29,26 +29,33 @@
 ### 사전 요구사항
 
 - Go 1.21 이상
+- [Task](https://taskfile.dev/installation/) (`brew install go-task` 또는 `go install github.com/go-task/task/v3/cmd/task@latest`)
 
 ### 빌드
 
 ```bash
 git clone <repo-url>
 cd public_api_mcp
-make          # 빌드
-make install  # /usr/local/bin에 설치 (sudo 필요할 수 있음)
+task          # 빌드
+task install  # /usr/local/bin에 설치 (sudo 필요할 수 있음)
 ```
 
 사용자 디렉토리에 설치:
 
 ```bash
-make install PREFIX=~/.local
+task install PREFIX=~/.local
 ```
 
 직접 빌드:
 
 ```bash
 go build -o public-api-mcp .
+```
+
+전체 태스크 목록:
+
+```bash
+task --list
 ```
 
 ---
@@ -337,7 +344,7 @@ sudo chmod 600 /etc/public-api-mcp/env
 sudo chown public-api-mcp:public-api-mcp /etc/public-api-mcp/env
 
 # 3. 바이너리 설치
-make install  # /usr/local/bin/public-api-mcp
+task install  # /usr/local/bin/public-api-mcp
 
 # 4. 서비스 파일 등록
 sudo cp deploy/public-api-mcp.service /etc/systemd/system/
@@ -352,7 +359,7 @@ journalctl -u public-api-mcp -f
 
 ```bash
 # 1. 바이너리 설치
-make install  # /usr/local/bin/public-api-mcp
+task install  # /usr/local/bin/public-api-mcp
 
 # 2. 환경변수 파일 생성
 mkdir -p ~/.config/public-api-mcp

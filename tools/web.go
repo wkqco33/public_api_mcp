@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -37,8 +36,8 @@ type fetchURLInput struct {
 }
 
 func RegisterWeb(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "get_news", Description: "특정 주제의 최신 뉴스를 Google News RSS에서 가져옵니다."}, getNews)
-	mcp.AddTool(s, &mcp.Tool{Name: "fetch_url", Description: "URL의 웹페이지 본문 텍스트를 추출합니다. 기사, 문서, 웹페이지 내용 확인에 사용."}, fetchURL)
+	mcp.AddTool(s, &mcp.Tool{Name: "get_news", Description: "특정 주제의 최신 뉴스를 Google News RSS에서 가져옵니다."}, withRecover("get_news", getNews))
+	mcp.AddTool(s, &mcp.Tool{Name: "fetch_url", Description: "URL의 웹페이지 본문 텍스트를 추출합니다. 기사, 문서, 웹페이지 내용 확인에 사용."}, withRecover("fetch_url", fetchURL))
 }
 
 type rssItem struct {
@@ -50,7 +49,7 @@ type rssFeed struct {
 	Items []rssItem `xml:"channel>item"`
 }
 
-func getNews(_ context.Context, _ *mcp.CallToolRequest, in getNewsInput) (*mcp.CallToolResult, any, error) {
+func getNews(ctx context.Context, _ *mcp.CallToolRequest, in getNewsInput) (*mcp.CallToolResult, any, error) {
 	if cached, ok := newsCache.Get(in.Topic); ok {
 		slog.Debug("뉴스 캐시 hit", "topic", in.Topic)
 		return toolText(cached), nil, nil
@@ -60,15 +59,16 @@ func getNews(_ context.Context, _ *mcp.CallToolRequest, in getNewsInput) (*mcp.C
 	apiURL := fmt.Sprintf("https://news.google.com/rss/search?q=%s&hl=ko&gl=KR&ceid=KR:ko",
 		url.QueryEscape(in.Topic))
 
-	req, _ := http.NewRequest("GET", apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return toolError("요청 생성 실패: %v", err), nil, nil
+	}
 	req.Header.Set("User-Agent", httpclient.UserAgent)
 
-	res, err := httpclient.Default.Do(req)
+	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
 	if err != nil {
 		return toolError("뉴스 요청 실패: %v", err), nil, nil
 	}
-	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
 
 	var feed rssFeed
 	if err := xml.Unmarshal(body, &feed); err != nil {
@@ -92,29 +92,22 @@ func getNews(_ context.Context, _ *mcp.CallToolRequest, in getNewsInput) (*mcp.C
 	return toolText(result), nil, nil
 }
 
-func fetchURL(_ context.Context, _ *mcp.CallToolRequest, in fetchURLInput) (*mcp.CallToolResult, any, error) {
-	req, err := http.NewRequest("GET", in.URL, nil)
+func fetchURL(ctx context.Context, _ *mcp.CallToolRequest, in fetchURLInput) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", in.URL, nil)
 	if err != nil {
 		return toolError("잘못된 URL: %v", err), nil, nil
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	req = req.WithContext(ctx)
-	res, err := httpclient.Default.Do(req)
+	body, status, err := httpclient.FetchBody(req, 1<<20) // 1MB 제한
 	if err != nil {
 		return toolError("URL 요청 실패: %v", err), nil, nil
 	}
-	defer res.Body.Close()
-
-	if res.StatusCode >= 400 {
-		return toolError("HTTP %d 오류", res.StatusCode), nil, nil
-	}
-
-	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20)) // 1MB 제한
-	if err != nil {
-		return toolError("본문 읽기 실패: %v", err), nil, nil
+	if status >= 400 {
+		return toolError("HTTP %d 오류", status), nil, nil
 	}
 
 	text := extractText(string(body))

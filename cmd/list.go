@@ -22,7 +22,7 @@ var toolCategories = []struct {
 		"github_list_issues", "github_create_issue", "github_workflow_runs",
 	}},
 	{"exchange (한국수출입은행)", []string{
-		"get_exchange_rate",
+		"get_exchange_rates",
 	}},
 	{"fuel (오피넷)", []string{
 		"get_fuel_avg_price", "get_fuel_sido_price",
@@ -31,7 +31,7 @@ var toolCategories = []struct {
 		"get_stock_price", "get_stock_analysis_data",
 	}},
 	{"real_estate (공공데이터포털)", []string{
-		"get_real_estate_transactions",
+		"get_real_estate_data",
 	}},
 	{"transport (공공데이터포털 + 서울시)", []string{
 		"search_bus_stop", "get_bus_arrival", "get_subway_arrival",
