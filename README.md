@@ -130,7 +130,7 @@ cp .env.example .env
 `config-examples/` 디렉토리에 플랫폼별 설정 예시 파일이 있습니다.
 
 - **stdio**: 클라이언트가 바이너리를 직접 실행. `/절대경로/public-api-mcp` 부분을 실제 경로로 교체.
-- **SSE**: 서버를 별도로 먼저 기동(`serve http`)한 뒤 클라이언트가 URL로 접속.
+- **SSE**: 서버를 별도로 먼저 기동(`serve http`)한 뒤 클라이언트가 URL로 접속. `serve http`는 `MCP_AUTH_TOKEN`이 설정되어 있지 않으면 시작을 거부합니다 — `public-api-mcp config generate-token`으로 토큰을 생성해 `.env`에 넣고, 아래 예시의 `<MCP_AUTH_TOKEN>` 부분을 그 값으로 교체하세요. 헤더를 지원하지 않는 클라이언트는 SSE 대신 stdio를 사용하세요.
 
 ### Claude Desktop
 
@@ -155,11 +155,10 @@ cp .env.example .env
 {
   "mcpServers": {
     "public-api-mcp": {
-<<<<<<< Updated upstream
-      "url": "http://localhost:18080/sse"
-=======
-      "url": "https://api-mcp.wkqcosoft.cloud/sse"
->>>>>>> Stashed changes
+      "url": "https://api-mcp.wkqcosoft.cloud/sse",
+      "headers": {
+        "Authorization": "Bearer <MCP_AUTH_TOKEN>"
+      }
     }
   }
 }
@@ -188,11 +187,10 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
   "servers": {
     "public-api-mcp": {
       "type": "sse",
-<<<<<<< Updated upstream
-      "url": "http://localhost:18080/sse"
-=======
-      "url": "https://api-mcp.wkqcosoft.cloud/sse"
->>>>>>> Stashed changes
+      "url": "https://api-mcp.wkqcosoft.cloud/sse",
+      "headers": {
+        "Authorization": "Bearer <MCP_AUTH_TOKEN>"
+      }
     }
   }
 }
@@ -219,11 +217,10 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
 {
   "mcpServers": {
     "public-api-mcp": {
-<<<<<<< Updated upstream
-      "url": "http://localhost:18080/sse"
-=======
-      "url": "https://api-mcp.wkqcosoft.cloud/sse"
->>>>>>> Stashed changes
+      "url": "https://api-mcp.wkqcosoft.cloud/sse",
+      "headers": {
+        "Authorization": "Bearer <MCP_AUTH_TOKEN>"
+      }
     }
   }
 }
@@ -250,11 +247,10 @@ VS Code 1.99 이상. 워크스페이스 루트에 `.vscode/mcp.json` 파일을 �
 {
   "mcpServers": {
     "public-api-mcp": {
-<<<<<<< Updated upstream
-      "url": "http://localhost:18080/sse"
-=======
-      "url": "https://api-mcp.wkqcosoft.cloud/sse"
->>>>>>> Stashed changes
+      "url": "https://api-mcp.wkqcosoft.cloud/sse",
+      "headers": {
+        "Authorization": "Bearer <MCP_AUTH_TOKEN>"
+      }
     }
   }
 }
@@ -283,11 +279,10 @@ VS Code `settings.json`에 추가합니다 (`Ctrl+Shift+P` → "Open User Settin
 {
   "cline.mcpServers": {
     "public-api-mcp": {
-<<<<<<< Updated upstream
-      "url": "http://localhost:18080/sse",
-=======
       "url": "https://api-mcp.wkqcosoft.cloud/sse",
->>>>>>> Stashed changes
+      "headers": {
+        "Authorization": "Bearer <MCP_AUTH_TOKEN>"
+      },
       "disabled": false,
       "alwaysAllow": []
     }

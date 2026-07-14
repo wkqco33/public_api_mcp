@@ -26,6 +26,10 @@ var (
 	NationalLibraryAPIKey string
 
 	PixabayAPIKey string
+
+	// MCPAuthToken은 serve http(SSE) 진입점을 보호하는 공유 비밀키다.
+	// 비어 있으면 serve http는 시작을 거부한다(--insecure로만 예외 허용).
+	MCPAuthToken string
 )
 
 // Load는 envFile을 로딩한 뒤 모든 config 변수를 채운다.
@@ -56,4 +60,6 @@ func Load(envFile string) {
 	NationalLibraryAPIKey = os.Getenv("NATIONAL_LIBRARY_API_KEY")
 
 	PixabayAPIKey = os.Getenv("PIXABAY_API_KEY")
+
+	MCPAuthToken = os.Getenv("MCP_AUTH_TOKEN")
 }

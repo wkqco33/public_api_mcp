@@ -2,7 +2,10 @@
   "servers": {
     "public-api-mcp": {
       "type": "sse",
-      "url": "https://api-mcp.wkqcosoft.cloud/sse"
+      "url": "https://api-mcp.wkqcosoft.cloud/sse",
+      "headers": {
+        "Authorization": "Bearer <MCP_AUTH_TOKEN>"
+      }
     }
   }
 }

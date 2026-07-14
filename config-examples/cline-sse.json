@@ -2,6 +2,9 @@
   "cline.mcpServers": {
     "public-api-mcp": {
       "url": "https://api-mcp.wkqcosoft.cloud/sse",
+      "headers": {
+        "Authorization": "Bearer <MCP_AUTH_TOKEN>"
+      },
       "disabled": false,
       "alwaysAllow": []
     }

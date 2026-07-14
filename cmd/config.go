@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -24,6 +26,7 @@ var apiKeys = []keyEntry{
 	{"GITHUB_TOKEN", func() string { return config.GitHubToken }},
 	{"NATIONAL_LIBRARY_API_KEY", func() string { return config.NationalLibraryAPIKey }},
 	{"PIXABAY_API_KEY", func() string { return config.PixabayAPIKey }},
+	{"MCP_AUTH_TOKEN", func() string { return config.MCPAuthToken }},
 }
 
 func maskKey(v string) string {
@@ -73,7 +76,20 @@ var configValidateCmd = &cobra.Command{
 	},
 }
 
+var configGenerateTokenCmd = &cobra.Command{
+	Use:   "generate-token",
+	Short: "serve http용 MCP_AUTH_TOKEN 무작위 생성",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		buf := make([]byte, 32)
+		if _, err := rand.Read(buf); err != nil {
+			return fmt.Errorf("난수 생성 실패: %w", err)
+		}
+		fmt.Println(hex.EncodeToString(buf))
+		return nil
+	},
+}
+
 func init() {
-	configCmd.AddCommand(configShowCmd, configValidateCmd)
+	configCmd.AddCommand(configShowCmd, configValidateCmd, configGenerateTokenCmd)
 	RootCmd.AddCommand(configCmd)
 }
