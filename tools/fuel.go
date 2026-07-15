@@ -85,6 +85,18 @@ func diffStr(diff any) string {
 	return "→0"
 }
 
+func parseFloat(v any) float64 {
+	switch val := v.(type) {
+	case float64:
+		return val
+	case string:
+		f, _ := strconv.ParseFloat(val, 64)
+		return f
+	default:
+		return 0
+	}
+}
+
 func getFuelAvgPrice(ctx context.Context, _ *mcp.CallToolRequest, in fuelAvgInput) (*mcp.CallToolResult, any, error) {
 	params := map[string]string{}
 	if in.Prodcd != "" {
@@ -113,7 +125,7 @@ func getFuelAvgPrice(ctx context.Context, _ *mcp.CallToolRequest, in fuelAvgInpu
 		if name == "" {
 			name = prodnm
 		}
-		price, _ := item["PRICE"].(float64)
+		price := parseFloat(item["PRICE"])
 		fmt.Fprintf(&sb, "  %s: %.2f원/L (%s원)\n", name, price, diffStr(item["DIFF"]))
 	}
 	return toolText(sb.String()), nil, nil
@@ -153,7 +165,7 @@ func getFuelSidoPrice(ctx context.Context, _ *mcp.CallToolRequest, in fuelSidoIn
 		if name == "" {
 			name = prodcd
 		}
-		price, _ := item["PRICE"].(float64)
+		price := parseFloat(item["PRICE"])
 		line := fmt.Sprintf("%s: %.2f원/L (%s원)", name, price, diffStr(item["DIFF"]))
 		if _, exists := sidoMap[sname]; !exists {
 			sidoOrder = append(sidoOrder, sname)
