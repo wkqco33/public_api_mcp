@@ -34,6 +34,10 @@ func RegisterFuel(s *mcp.Server) {
 		Name:        "get_fuel_sido_price",
 		Description: "시도별 주유소 평균가격 조회 (오피넷).",
 	}, withRecover("get_fuel_sido_price", getFuelSidoPrice))
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_fuel_low_top10",
+		Description: "특정 지역의 제품별 최저가 주유소 Top 10 목록 조회 (오피넷).",
+	}, withRecover("get_fuel_low_top10", getFuelLowTop10))
 }
 
 func opinetGet(ctx context.Context, endpoint string, params map[string]string) (map[string]any, error) {
@@ -181,5 +185,78 @@ func getFuelSidoPrice(ctx context.Context, _ *mcp.CallToolRequest, in fuelSidoIn
 			fmt.Fprintf(&sb, "  %s\n", p)
 		}
 	}
+	return toolText(sb.String()), nil, nil
+}
+
+var pollNames = map[string]string{
+	"SKE": "SK에너지",
+	"GSC": "GS칼텍스",
+	"HDO": "현대오일뱅크",
+	"SOL": "S-OIL",
+	"RTO": "알뜰주유소",
+	"RTX": "고속도로알뜰",
+	"NHO": "NH알뜰",
+	"E10": "E1",
+	"SKG": "SK가스",
+}
+
+type fuelLowTop10Input struct {
+	Prodcd string `json:"prodcd" jsonschema:"제품코드: B027(보통휘발유), D047(경유), B034(고급휘발유), C004(등유), K015(부탄)"`
+	Area   string `json:"area" jsonschema:"지역코드 (예: 서울 01, 서울종로 0101, 경기수원 0202 등)"`
+}
+
+func getFuelLowTop10(ctx context.Context, _ *mcp.CallToolRequest, in fuelLowTop10Input) (*mcp.CallToolResult, any, error) {
+	prod := strings.TrimSpace(in.Prodcd)
+	if prod == "" {
+		return toolError("제품코드(prodcd)는 필수 입력 항목입니다 (예: B027)"), nil, nil
+	}
+
+	area := strings.TrimSpace(in.Area)
+	if area == "" {
+		return toolError("지역코드(area)는 필수 입력 항목입니다 (예: 서울 종로 0101)"), nil, nil
+	}
+
+	params := map[string]string{
+		"prodcd": prod,
+		"area":   area,
+	}
+
+	data, err := opinetGet(ctx, "lowTop10.do", params)
+	if err != nil {
+		return toolError("%v", err), nil, nil
+	}
+
+	result, _ := data["RESULT"].(map[string]any)
+	oils, _ := result["OIL"].([]any)
+	if len(oils) == 0 {
+		return toolText("조회 결과가 없습니다. 제품코드 또는 지역코드를 확인해 주세요."), nil, nil
+	}
+
+	var sb strings.Builder
+	prodName := prodNames[prod]
+	if prodName == "" {
+		prodName = prod
+	}
+	fmt.Fprintf(&sb, "### 지역별 %s 최저가 주유소 Top 10\n\n", prodName)
+	fmt.Fprintln(&sb, "| 순위 | 주유소명 | 상표 | 가격 | 주소 |")
+	fmt.Fprintln(&sb, "|---|---|---|---|---|")
+
+	for i, raw := range oils {
+		item, _ := raw.(map[string]any)
+		osNm, _ := item["OS_NM"].(string)
+		pollCd, _ := item["POLL_DIV_CD"].(string)
+		pollName := pollNames[pollCd]
+		if pollName == "" {
+			pollName = pollCd
+		}
+		price := parseFloat(item["PRICE"])
+		adr, _ := item["NEW_ADR"].(string)
+		if adr == "" {
+			adr, _ = item["VAN_ADR"].(string)
+		}
+
+		fmt.Fprintf(&sb, "| %d | %s | %s | %.2f원 | %s |\n", i+1, osNm, pollName, price, adr)
+	}
+
 	return toolText(sb.String()), nil, nil
 }

@@ -30,6 +30,14 @@ type stockAnalysisInput struct {
 	ItemName string `json:"item_name" jsonschema:"종목명 (예: 삼성전자)"`
 }
 
+type stockMarketIndexInput struct {
+	IndexName string `json:"index_name,omitempty" jsonschema:"지수명 (예: 코스피, 코스닥, KRX 100 등). 생략 시 전체"`
+	BaseDate  string `json:"base_date,omitempty" jsonschema:"기준일자 (YYYYMMDD)"`
+	BeginDate string `json:"begin_date,omitempty" jsonschema:"시작일자 (YYYYMMDD)"`
+	EndDate   string `json:"end_date,omitempty" jsonschema:"종료일자 (YYYYMMDD)"`
+	NumOfRows int    `json:"num_of_rows,omitempty" jsonschema:"결과 수 (기본: 10)"`
+}
+
 func RegisterStock(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_stock_price",
@@ -39,6 +47,10 @@ func RegisterStock(s *mcp.Server) {
 		Name:        "get_stock_analysis_data",
 		Description: "특정 종목의 최근 30일 시세 + 관련 뉴스를 종합하여 분석 데이터 제공.",
 	}, withRecover("get_stock_analysis_data", getStockAnalysisData))
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_stock_market_index",
+		Description: "종합주가지수(KOSPI, KOSDAQ 등)의 시세 정보를 조회.",
+	}, withRecover("get_stock_market_index", getStockMarketIndex))
 }
 
 func getStockPrice(ctx context.Context, _ *mcp.CallToolRequest, in stockPriceInput) (*mcp.CallToolResult, any, error) {
@@ -158,4 +170,87 @@ func getStockAnalysisData(ctx context.Context, _ *mcp.CallToolRequest, in stockA
 	result := fmt.Sprintf("### [%s] 분석 데이터 ###\n\n1. 최근 30일 시세 추이:\n%s\n\n2. 관련 최신 뉴스:\n%s",
 		in.ItemName, priceText, newsText)
 	return toolText(result), nil, nil
+}
+
+func getStockMarketIndex(ctx context.Context, _ *mcp.CallToolRequest, in stockMarketIndexInput) (*mcp.CallToolResult, any, error) {
+	if config.PublicDataPortalAPIKey == "" {
+		return toolError("PUBLIC_DATA_PORTAL_API_KEY가 설정되지 않았습니다"), nil, nil
+	}
+
+	numOfRows := in.NumOfRows
+	if numOfRows <= 0 {
+		numOfRows = 10
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://apis.data.go.kr/1160100/service/GetMarketIndexInfoService/getStockMarketIndex", nil)
+	if err != nil {
+		return toolError("요청 생성 실패: %v", err), nil, nil
+	}
+	q := req.URL.Query()
+	q.Set("serviceKey", config.PublicDataPortalAPIKey)
+	q.Set("numOfRows", fmt.Sprintf("%d", numOfRows))
+	q.Set("pageNo", "1")
+	q.Set("resultType", "json")
+	if in.IndexName != "" {
+		q.Set("idxNm", in.IndexName)
+	}
+	if in.BaseDate != "" {
+		q.Set("basDt", in.BaseDate)
+	}
+	if in.BeginDate != "" {
+		q.Set("beginBasDt", in.BeginDate)
+	}
+	if in.EndDate != "" {
+		q.Set("endBasDt", in.EndDate)
+	}
+	req.URL.RawQuery = q.Encode()
+
+	body, statusCode, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	if err != nil {
+		if statusCode == http.StatusForbidden {
+			return toolError("지수 시세 API 호출 권한이 없습니다 (Forbidden). 공공데이터포털에서 '금융위원회_지수시세정보' API 활용 신청이 승인되었는지 확인해 주세요."), nil, nil
+		}
+		return toolError("%v", err), nil, nil
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return toolError("응답 파싱 실패 (상태코드 %d): %s", statusCode, string(body)), nil, nil
+	}
+
+	response, _ := data["response"].(map[string]any)
+	header, _ := response["header"].(map[string]any)
+	if code, _ := header["resultCode"].(string); code != "00" {
+		msg, _ := header["resultMsg"].(string)
+		return toolError("API 오류: %s", msg), nil, nil
+	}
+
+	respBody, _ := response["body"].(map[string]any)
+	items_, _ := respBody["items"].(map[string]any)
+	itemList, _ := items_["item"].([]any)
+
+	if len(itemList) == 0 {
+		return toolText("조회 결과가 없습니다"), nil, nil
+	}
+
+	var sb strings.Builder
+	fmt.Fprintln(&sb, "### 종합주가지수 시세 정보")
+	fmt.Fprintln(&sb, "| 기준일자 | 지수명 | 종가 | 대비 | 등락률 | 고가 | 저가 |")
+	fmt.Fprintln(&sb, "|---|---|---|---|---|---|---|")
+
+	for _, raw := range itemList {
+		item, _ := raw.(map[string]any)
+		basDt, _ := item["basDt"].(string)
+		idxNm, _ := item["idxNm"].(string)
+		clpr, _ := item["clpr"].(string)
+		vs, _ := item["vs"].(string)
+		fltRt, _ := item["fltRt"].(string)
+		hipr, _ := item["hipr"].(string)
+		lopr, _ := item["lopr"].(string)
+
+		fmt.Fprintf(&sb, "| %s | %s | %s | %s | %s%% | %s | %s |\n",
+			basDt, idxNm, clpr, vs, fltRt, hipr, lopr)
+	}
+
+	return toolText(sb.String()), nil, nil
 }

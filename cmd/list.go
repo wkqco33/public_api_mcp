@@ -25,10 +25,10 @@ var toolCategories = []struct {
 		"get_exchange_rates",
 	}},
 	{"fuel (오피넷)", []string{
-		"get_fuel_avg_price", "get_fuel_sido_price",
+		"get_fuel_avg_price", "get_fuel_sido_price", "get_fuel_low_top10",
 	}},
 	{"stock (공공데이터포털)", []string{
-		"get_stock_price", "get_stock_analysis_data",
+		"get_stock_price", "get_stock_analysis_data", "get_stock_market_index",
 	}},
 	{"real_estate (공공데이터포털)", []string{
 		"get_real_estate_data",
@@ -40,7 +40,8 @@ var toolCategories = []struct {
 		"get_current_weather", "get_weather_forecast",
 	}},
 	{"dart (금융감독원 DART)", []string{
-		"search_dart_company", "get_dart_disclosures",
+		"search_dart_company", "get_dart_disclosures", "get_dart_financials",
+		"get_dart_dividend_info", "get_dart_multi_financials",
 	}},
 	{"web", []string{
 		"get_news", "fetch_url",

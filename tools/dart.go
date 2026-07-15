@@ -41,6 +41,24 @@ type dartDisclosuresInput struct {
 	NumOfRows   int    `json:"num_of_rows,omitempty" jsonschema:"결과 수 (기본: 10)"`
 }
 
+type dartFinancialsInput struct {
+	CompanyName string `json:"company_name" jsonschema:"기업명 또는 기업코드(8자리 숫자)"`
+	Year        string `json:"year" jsonschema:"사업연도 (YYYY, 예: 2023)"`
+	ReportCode  string `json:"report_code,omitempty" jsonschema:"보고서 구분: 11011(사업보고서), 11012(반기보고서), 11013(1분기보고서), 11014(3분기보고서). 기본값: 11011"`
+}
+
+type dartDividendInput struct {
+	CompanyName string `json:"company_name" jsonschema:"기업명 또는 기업코드(8자리 숫자)"`
+	Year        string `json:"year" jsonschema:"사업연도 (YYYY, 예: 2023)"`
+	ReportCode  string `json:"report_code,omitempty" jsonschema:"보고서 구분: 11011(사업보고서), 11012(반기보고서), 11013(1분기보고서), 11014(3분기보고서). 기본값: 11011"`
+}
+
+type dartMultiFinancialsInput struct {
+	CompanyNames []string `json:"company_names" jsonschema:"비교할 기업명 또는 기업코드의 배열 (최대 10개)"`
+	Year         string   `json:"year" jsonschema:"사업연도 (YYYY, 예: 2023)"`
+	ReportCode   string   `json:"report_code,omitempty" jsonschema:"보고서 구분: 11011(사업보고서), 11012(반기보고서), 11013(1분기보고서), 11014(3분기보고서). 기본값: 11011"`
+}
+
 func RegisterDART(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search_dart_company",
@@ -50,6 +68,18 @@ func RegisterDART(s *mcp.Server) {
 		Name:        "get_dart_disclosures",
 		Description: "기업의 DART 공시 목록 조회 (사업보고서, 분기보고서 등).",
 	}, withRecover("get_dart_disclosures", getDARTDisclosures))
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_dart_financials",
+		Description: "기업의 특정 연도/보고서별 재무제표(주요 계정) 조회.",
+	}, withRecover("get_dart_financials", getDARTFinancials))
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_dart_dividend_info",
+		Description: "기업의 특정 연도/보고서별 배당에 관한 사항 조회.",
+	}, withRecover("get_dart_dividend_info", getDARTDividendInfo))
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_dart_multi_financials",
+		Description: "여러 기업의 특정 연도/보고서별 주요 재무제표 계정 비교 조회.",
+	}, withRecover("get_dart_multi_financials", getDARTMultiFinancials))
 }
 
 func dartCachePath() string {
@@ -304,5 +334,262 @@ func getDARTDisclosures(ctx context.Context, _ *mcp.CallToolRequest, in dartDisc
 		url := "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=" + rcpNo
 		fmt.Fprintf(&sb, "[%s] %s (제출: %s)\n%s\n\n", rcpDt, reportNm, flrNm, url)
 	}
+	return toolText(sb.String()), nil, nil
+}
+
+func getDARTFinancials(ctx context.Context, _ *mcp.CallToolRequest, in dartFinancialsInput) (*mcp.CallToolResult, any, error) {
+	corpCode, err := resolveCorpCode(in.CompanyName)
+	if err != nil {
+		return toolError("%v", err), nil, nil
+	}
+
+	year := strings.TrimSpace(in.Year)
+	if year == "" {
+		return toolError("사업연도(year)는 필수 입력 항목입니다 (예: 2023)"), nil, nil
+	}
+
+	reportCode := in.ReportCode
+	if reportCode == "" {
+		reportCode = "11011"
+	}
+
+	params := map[string]string{
+		"corp_code":  corpCode,
+		"bsns_year":  year,
+		"reprt_code": reportCode,
+	}
+
+	data, err := dartGet(ctx, "/api/fnlttSinglAcnt.json", params)
+	if err != nil {
+		return toolError("%v", err), nil, nil
+	}
+
+	list, _ := data["list"].([]any)
+	if len(list) == 0 {
+		return toolText("조회된 재무제표 데이터가 없습니다. 사업연도 또는 보고서 구분을 확인해 주세요."), nil, nil
+	}
+
+	var sb strings.Builder
+	reportNames := map[string]string{
+		"11011": "사업보고서",
+		"11012": "반기보고서",
+		"11013": "1분기보고서",
+		"11014": "3분기보고서",
+	}
+	rName := reportNames[reportCode]
+	if rName == "" {
+		rName = reportCode
+	}
+
+	fmt.Fprintf(&sb, "### [%s] %s년 %s 주요 재무 정보\n\n", in.CompanyName, year, rName)
+
+	bySj := make(map[string][]map[string]any)
+	var sjOrder []string
+
+	for _, raw := range list {
+		item, _ := raw.(map[string]any)
+		sjNm, _ := item["sj_nm"].(string)
+		if sjNm == "" {
+			sjNm = "기타"
+		}
+		if _, exists := bySj[sjNm]; !exists {
+			sjOrder = append(sjOrder, sjNm)
+		}
+		bySj[sjNm] = append(bySj[sjNm], item)
+	}
+
+	for _, sjNm := range sjOrder {
+		fmt.Fprintf(&sb, "#### %s\n", sjNm)
+		fmt.Fprintln(&sb, "| 계정과목 | 당기 금액 | 전기 금액 | 전전기 금액 |")
+		fmt.Fprintln(&sb, "|---|---|---|---|")
+		for _, item := range bySj[sjNm] {
+			accNm, _ := item["account_nm"].(string)
+			thstrm, _ := item["thstrm_amount"].(string)
+			frmtrm, _ := item["frmtrm_amount"].(string)
+			bfefrmtrm, _ := item["bfefrmtrm_amount"].(string)
+
+			if thstrm == "" {
+				thstrm = "-"
+			}
+			if frmtrm == "" {
+				frmtrm = "-"
+			}
+			if bfefrmtrm == "" {
+				bfefrmtrm = "-"
+			}
+
+			fmt.Fprintf(&sb, "| %s | %s | %s | %s |\n", accNm, thstrm, frmtrm, bfefrmtrm)
+		}
+		fmt.Fprintln(&sb)
+	}
+
+	return toolText(sb.String()), nil, nil
+}
+
+func getDARTDividendInfo(ctx context.Context, _ *mcp.CallToolRequest, in dartDividendInput) (*mcp.CallToolResult, any, error) {
+	corpCode, err := resolveCorpCode(in.CompanyName)
+	if err != nil {
+		return toolError("%v", err), nil, nil
+	}
+
+	year := strings.TrimSpace(in.Year)
+	if year == "" {
+		return toolError("사업연도(year)는 필수 입력 항목입니다 (예: 2023)"), nil, nil
+	}
+
+	reportCode := in.ReportCode
+	if reportCode == "" {
+		reportCode = "11011"
+	}
+
+	params := map[string]string{
+		"corp_code":  corpCode,
+		"bsns_year":  year,
+		"reprt_code": reportCode,
+	}
+
+	data, err := dartGet(ctx, "/api/alotMatter.json", params)
+	if err != nil {
+		return toolError("%v", err), nil, nil
+	}
+
+	list, _ := data["list"].([]any)
+	if len(list) == 0 {
+		return toolText("조회된 배당 정보 데이터가 없습니다. 사업연도 또는 보고서 구분을 확인해 주세요."), nil, nil
+	}
+
+	var sb strings.Builder
+	reportNames := map[string]string{
+		"11011": "사업보고서",
+		"11012": "반기보고서",
+		"11013": "1분기보고서",
+		"11014": "3분기보고서",
+	}
+	rName := reportNames[reportCode]
+	if rName == "" {
+		rName = reportCode
+	}
+
+	fmt.Fprintf(&sb, "### [%s] %s년 %s 배당에 관한 사항\n\n", in.CompanyName, year, rName)
+	fmt.Fprintln(&sb, "| 구분 | 당기 (thstrm) | 전기 (frmtrm) | 전전기 (bfefrmtrm) |")
+	fmt.Fprintln(&sb, "|---|---|---|---|")
+
+	for _, raw := range list {
+		item, _ := raw.(map[string]any)
+		se, _ := item["se"].(string)
+		thstrm, _ := item["thstrm"].(string)
+		frmtrm, _ := item["frmtrm"].(string)
+		bfefrmtrm, _ := item["bfefrmtrm"].(string)
+
+		if thstrm == "" {
+			thstrm = "-"
+		}
+		if frmtrm == "" {
+			frmtrm = "-"
+		}
+		if bfefrmtrm == "" {
+			bfefrmtrm = "-"
+		}
+
+		fmt.Fprintf(&sb, "| %s | %s | %s | %s |\n", se, thstrm, frmtrm, bfefrmtrm)
+	}
+
+	return toolText(sb.String()), nil, nil
+}
+
+func getDARTMultiFinancials(ctx context.Context, _ *mcp.CallToolRequest, in dartMultiFinancialsInput) (*mcp.CallToolResult, any, error) {
+	if len(in.CompanyNames) == 0 {
+		return toolError("비교할 기업명 목록(company_names)은 필수입니다"), nil, nil
+	}
+	if len(in.CompanyNames) > 10 {
+		return toolError("한 번에 최대 10개 기업까지만 비교 가능합니다"), nil, nil
+	}
+
+	year := strings.TrimSpace(in.Year)
+	if year == "" {
+		return toolError("사업연도(year)는 필수 입력 항목입니다 (예: 2023)"), nil, nil
+	}
+
+	reportCode := in.ReportCode
+	if reportCode == "" {
+		reportCode = "11011"
+	}
+
+	var corpCodes []string
+	for _, name := range in.CompanyNames {
+		code, err := resolveCorpCode(name)
+		if err != nil {
+			return toolError("기업 '%s' 조회 실패: %v", name, err), nil, nil
+		}
+		corpCodes = append(corpCodes, code)
+	}
+
+	params := map[string]string{
+		"corp_code":  strings.Join(corpCodes, ","),
+		"bsns_year":  year,
+		"reprt_code": reportCode,
+	}
+
+	data, err := dartGet(ctx, "/api/fnlttMultiAcnt.json", params)
+	if err != nil {
+		return toolError("%v", err), nil, nil
+	}
+
+	list, _ := data["list"].([]any)
+	if len(list) == 0 {
+		return toolText("조회된 재무제표 데이터가 없습니다. 사업연도 또는 보고서 구분을 확인해 주세요."), nil, nil
+	}
+
+	codes, err := loadCorpCodes()
+	var nameMap map[string]string
+	if err == nil {
+		nameMap = make(map[string]string, len(codes))
+		for name, code := range codes {
+			nameMap[code] = name
+		}
+	}
+
+	var sb strings.Builder
+	reportNames := map[string]string{
+		"11011": "사업보고서",
+		"11012": "반기보고서",
+		"11013": "1분기보고서",
+		"11014": "3분기보고서",
+	}
+	rName := reportNames[reportCode]
+	if rName == "" {
+		rName = reportCode
+	}
+
+	fmt.Fprintf(&sb, "### %s년 %s 주요 재무 지표 비교\n\n", year, rName)
+	fmt.Fprintln(&sb, "| 회사명 | 계정구분 | 계정과목 | 당기 금액 | 전기 금액 |")
+	fmt.Fprintln(&sb, "|---|---|---|---|---|")
+
+	for _, raw := range list {
+		item, _ := raw.(map[string]any)
+		cCode, _ := item["corp_code"].(string)
+		cName := ""
+		if nameMap != nil {
+			cName = nameMap[cCode]
+		}
+		if cName == "" {
+			cName = cCode
+		}
+
+		sjNm, _ := item["sj_nm"].(string)
+		accNm, _ := item["account_nm"].(string)
+		thstrm, _ := item["thstrm_amount"].(string)
+		frmtrm, _ := item["frmtrm_amount"].(string)
+
+		if thstrm == "" {
+			thstrm = "-"
+		}
+		if frmtrm == "" {
+			frmtrm = "-"
+		}
+
+		fmt.Fprintf(&sb, "| %s | %s | %s | %s | %s |\n", cName, sjNm, accNm, thstrm, frmtrm)
+	}
+
 	return toolText(sb.String()), nil, nil
 }

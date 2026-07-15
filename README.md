@@ -1,22 +1,22 @@
 # public-api-mcp
 
-한국 공공 API 37개를 MCP(Model Context Protocol) 서버로 노출합니다. Claude Desktop, Cline 등 MCP 클라이언트에서 바로 사용할 수 있습니다.
+한국 공공 API 42개를 MCP(Model Context Protocol) 서버로 노출합니다. Claude Desktop, Cline 등 MCP 클라이언트에서 바로 사용할 수 있습니다.
 
 ---
 
-## 도구 목록 (37개)
+## 도구 목록 (42개)
 
 | 카테고리 | 도구 | 필요 API 키 |
 |----------|------|-------------|
 | 네이버 검색 | `naver_search_blog`, `naver_search_news`, `naver_search_cafe`, `naver_search_book`, `naver_search_encyc`, `naver_search_kin`, `naver_search_local`, `naver_search_webkr`, `naver_search_image`, `naver_search_shop`, `naver_search_doc`, `naver_check_adult`, `naver_convert_errata` | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` |
 | GitHub | `github_list_repos`, `github_list_prs`, `github_get_pr`, `github_list_issues`, `github_create_issue`, `github_workflow_runs` | `GITHUB_TOKEN` |
 | 환율 | `get_exchange_rates` | `EXCHANGE_API_KEY` |
-| 유가 | `get_fuel_avg_price`, `get_fuel_sido_price` | `OPINET_API_KEY` |
-| 주식 | `get_stock_price`, `get_stock_analysis_data` | `PUBLIC_DATA_PORTAL_API_KEY` |
+| 유가 | `get_fuel_avg_price`, `get_fuel_sido_price`, `get_fuel_low_top10` | `OPINET_API_KEY` |
+| 주식 | `get_stock_price`, `get_stock_analysis_data`, `get_stock_market_index` | `PUBLIC_DATA_PORTAL_API_KEY` |
 | 부동산 | `get_real_estate_data` | `PUBLIC_DATA_PORTAL_API_KEY` |
 | 교통 | `search_bus_stop`, `get_bus_arrival`, `get_subway_arrival` | `PUBLIC_DATA_PORTAL_API_KEY`, `SEOUL_OPEN_API_KEY` |
 | 날씨 | `get_current_weather`, `get_weather_forecast` | `KMA_WEATHER_API_KEY` |
-| DART 공시 | `search_dart_company`, `get_dart_disclosures` | `OPENDART_API_KEY` |
+| DART 공시 | `search_dart_company`, `get_dart_disclosures`, `get_dart_financials`, `get_dart_dividend_info`, `get_dart_multi_financials` | `OPENDART_API_KEY` |
 | 웹 | `get_news`, `fetch_url` | 없음 |
 | 도서 | `get_recommended_books` | `NATIONAL_LIBRARY_API_KEY` |
 | 이미지 | `search_pixabay_images` | `PIXABAY_API_KEY` |
@@ -439,12 +439,12 @@ public_api_mcp/
     ├── naver.go          # 네이버 OpenAPI (13개)
     ├── github.go         # GitHub API (6개)
     ├── exchange.go       # 환율 (1개)
-    ├── fuel.go           # 유가 (2개)
-    ├── stock.go          # 주식 (2개)
+    ├── fuel.go           # 유가 (3개)
+    ├── stock.go          # 주식 (3개)
     ├── real_estate.go    # 부동산 (1개)
     ├── transport.go      # 버스/지하철 (3개)
     ├── weather.go        # 날씨 (2개)
-    ├── dart.go           # DART 공시 (2개)
+    ├── dart.go           # DART 공시 (5개)
     ├── web.go            # 뉴스/URL 가져오기 (2개)
     ├── book.go           # 도서 (1개)
     ├── pixabay.go        # 이미지 (1개)
