@@ -105,12 +105,43 @@ func normalizeKakaoSearch(collection string, page, size int, sort string) (int, 
 	return page, size, sort, nil
 }
 
+type httpDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+type kakaoClient struct {
+	httpClient httpDoer
+	baseURL    string
+	apiKey     string
+}
+
+func newKakaoClient(client httpDoer, baseURL, apiKey string) *kakaoClient {
+	return &kakaoClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+}
+
+func defaultKakaoClient() *kakaoClient {
+	return newKakaoClient(httpclient.Default, "https://dapi.kakao.com", config.KakaoRESTAPIKey)
+}
+
+func (c *kakaoClient) do(req *http.Request) ([]byte, int, error) {
+	if c.apiKey == "" {
+		return nil, 0, fmt.Errorf("KAKAO_REST_API_KEY가 설정되지 않았습니다")
+	}
+	req.Header.Set("Authorization", "KakaoAK "+c.apiKey)
+	req.Header.Set("Accept", "application/json")
+	return httpclient.FetchBodyWithClient(c.httpClient, req, maxAPIBodyBytes)
+}
+
 func kakaoSearchRequest(ctx context.Context, collection, query string, page, size int, sort string) (*mcp.CallToolResult, any, error) {
+	return kakaoSearchRequestWithClient(ctx, defaultKakaoClient(), collection, query, page, size, sort)
+}
+
+func kakaoSearchRequestWithClient(ctx context.Context, client *kakaoClient, collection, query string, page, size int, sort string) (*mcp.CallToolResult, any, error) {
 	version := "v2"
 	if collection == "book" {
 		version = "v3"
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://dapi.kakao.com/"+version+"/search/"+collection, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.baseURL+"/"+version+"/search/"+collection, nil)
 	if err != nil {
 		return toolError("요청 생성 실패: %v", err), nil, nil
 	}
@@ -120,7 +151,7 @@ func kakaoSearchRequest(ctx context.Context, collection, query string, page, siz
 	q.Set("size", fmt.Sprint(size))
 	q.Set("sort", sort)
 	req.URL.RawQuery = q.Encode()
-	body, status, err := kakaoDo(req)
+	body, status, err := client.do(req)
 	if err != nil {
 		return toolError("카카오 API 요청 실패: %v", err), nil, nil
 	}
@@ -137,16 +168,11 @@ func kakaoSearchRequest(ctx context.Context, collection, query string, page, siz
 	return toolText(formatKakaoDocuments(collection, data.Documents)), nil, nil
 }
 
-func kakaoDo(req *http.Request) ([]byte, int, error) {
-	if config.KakaoRESTAPIKey == "" {
-		return nil, 0, fmt.Errorf("KAKAO_REST_API_KEY가 설정되지 않았습니다")
-	}
-	req.Header.Set("Authorization", "KakaoAK "+config.KakaoRESTAPIKey)
-	req.Header.Set("Accept", "application/json")
-	return httpclient.FetchBody(req, maxAPIBodyBytes)
+func kakaoSearchPlaces(ctx context.Context, req *mcp.CallToolRequest, in kakaoPlaceInput) (*mcp.CallToolResult, any, error) {
+	return kakaoSearchPlacesWithClient(ctx, defaultKakaoClient(), req, in)
 }
 
-func kakaoSearchPlaces(ctx context.Context, _ *mcp.CallToolRequest, in kakaoPlaceInput) (*mcp.CallToolResult, any, error) {
+func kakaoSearchPlacesWithClient(ctx context.Context, client *kakaoClient, _ *mcp.CallToolRequest, in kakaoPlaceInput) (*mcp.CallToolResult, any, error) {
 	if strings.TrimSpace(in.Query) == "" {
 		return toolError("query는 비어 있을 수 없습니다"), nil, nil
 	}
@@ -169,7 +195,7 @@ func kakaoSearchPlaces(ctx context.Context, _ *mcp.CallToolRequest, in kakaoPlac
 	if in.Radius > 0 && !hasCoords {
 		return toolError("radius를 사용하려면 longitude와 latitude가 필요합니다"), nil, nil
 	}
-	path := "https://dapi.kakao.com/v2/local/search/keyword.json"
+	path := client.baseURL + "/v2/local/search/keyword.json"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return toolError("요청 생성 실패: %v", err), nil, nil
@@ -195,7 +221,7 @@ func kakaoSearchPlaces(ctx context.Context, _ *mcp.CallToolRequest, in kakaoPlac
 		q.Set("sort", in.Sort)
 	}
 	req.URL.RawQuery = q.Encode()
-	body, status, err := kakaoDo(req)
+	body, status, err := client.do(req)
 	if err != nil {
 		return toolError("카카오 API 요청 실패: %v", err), nil, nil
 	}

@@ -94,7 +94,15 @@ func SetDebug(on bool) {
 // 때문이다. tools 패키지 전반에 반복되던 "요청 → 크기 제한 → 바디 읽기" 보일러플레이트를
 // 여기 한 곳으로 모은다.
 func FetchBody(req *http.Request, limit int64) ([]byte, int, error) {
-	res, err := Default.Do(req)
+	return FetchBodyWithClient(Default, req, limit)
+}
+
+// FetchBodyWithClient voert req uit met een geïnjecteerde HTTP client.
+// Hierdoor kunnen API-adapters zonder globale transportvervanging worden getest.
+func FetchBodyWithClient(client interface {
+	Do(*http.Request) (*http.Response, error)
+}, req *http.Request, limit int64) ([]byte, int, error) {
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("요청 실패: %w", err)
 	}

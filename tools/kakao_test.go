@@ -108,6 +108,24 @@ func TestKakaoSearchErrors(t *testing.T) {
 	}
 }
 
+func TestKakaoClientCanUseInjectedHTTPClient(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/search/web" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "KakaoAK injected-key" {
+			t.Errorf("missing injected authorization")
+		}
+		_, _ = w.Write([]byte(`{"meta":{},"documents":[{"title":"injected"}]}`))
+	}))
+	defer ts.Close()
+	client := newKakaoClient(ts.Client(), ts.URL, "injected-key")
+	result, _, err := kakaoSearchRequestWithClient(context.Background(), client, "web", "test", 1, 1, "accuracy")
+	if err != nil || result.IsError || !strings.Contains(firstText(t, result), "injected") {
+		t.Fatalf("unexpected injected client result: %v", err)
+	}
+}
+
 func TestKakaoPlacesSuccess(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("x") != "127.1" || r.URL.Query().Get("radius") != "1000" {
