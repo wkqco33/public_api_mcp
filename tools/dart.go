@@ -1,13 +1,9 @@
 package tools
 
 import (
-	"archive/zip"
-	"bytes"
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -151,39 +147,9 @@ func loadCorpCodes() (map[string]string, error) {
 		return nil, fmt.Errorf("기업코드 다운로드 실패: %w", err)
 	}
 
-	zr, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	codes, err := parseCorpCodeZip(zipData)
 	if err != nil {
-		return nil, fmt.Errorf("ZIP 파싱 실패: %v", err)
-	}
-
-	var xmlBytes []byte
-	for _, f := range zr.File {
-		if strings.HasSuffix(strings.ToUpper(f.Name), ".XML") {
-			rc, _ := f.Open()
-			xmlBytes, _ = io.ReadAll(rc)
-			rc.Close()
-			break
-		}
-	}
-
-	type corpList struct {
-		Items []struct {
-			Name string `xml:"corp_name"`
-			Code string `xml:"corp_code"`
-		} `xml:"list"`
-	}
-	var cl corpList
-	if err := xml.Unmarshal(xmlBytes, &cl); err != nil {
-		return nil, fmt.Errorf("XML 파싱 실패: %v", err)
-	}
-
-	codes := make(map[string]string, len(cl.Items))
-	for _, item := range cl.Items {
-		name := strings.TrimSpace(item.Name)
-		code := strings.TrimSpace(item.Code)
-		if name != "" && code != "" {
-			codes[name] = code
-		}
+		return nil, err
 	}
 
 	os.MkdirAll(filepath.Dir(cachePath), 0755)
