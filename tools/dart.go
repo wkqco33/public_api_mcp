@@ -30,6 +30,22 @@ var (
 	corpCodeCache   = cache.New[string, string]()
 )
 
+type DARTHTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+type DARTClient struct {
+	httpClient DARTHTTPDoer
+	baseURL    string
+	apiKey     string
+}
+
+func NewDARTClient(client DARTHTTPDoer, baseURL, apiKey string) *DARTClient {
+	return &DARTClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+}
+func defaultDARTClient() *DARTClient {
+	return NewDARTClient(httpclient.Default, "https://opendart.fss.or.kr", config.OpenDARTAPIKey)
+}
+
 type dartSearchInput struct {
 	CompanyName string `json:"company_name" jsonschema:"기업명 또는 기업코드(8자리 숫자)"`
 }
@@ -230,21 +246,24 @@ func resolveCorpCode(nameOrCode string) (string, error) {
 }
 
 func dartGet(ctx context.Context, endpoint string, params map[string]string) (map[string]any, error) {
-	if config.OpenDARTAPIKey == "" {
+	return dartGetWithClient(ctx, defaultDARTClient(), endpoint, params)
+}
+func dartGetWithClient(ctx context.Context, client *DARTClient, endpoint string, params map[string]string) (map[string]any, error) {
+	if client.apiKey == "" {
 		return nil, fmt.Errorf("OPENDART_API_KEY가 설정되지 않았습니다")
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://opendart.fss.or.kr"+endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", client.baseURL+endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("요청 생성 실패: %w", err)
 	}
 	q := req.URL.Query()
-	q.Set("crtfc_key", config.OpenDARTAPIKey)
+	q.Set("crtfc_key", client.apiKey)
 	for k, v := range params {
 		q.Set(k, v)
 	}
 	req.URL.RawQuery = q.Encode()
 
-	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	body, _, err := httpclient.FetchBodyWithClient(client.httpClient, req, maxAPIBodyBytes)
 	if err != nil {
 		return nil, err
 	}
