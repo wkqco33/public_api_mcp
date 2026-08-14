@@ -110,18 +110,11 @@ func loadCorpCodes() (map[string]string, error) {
 	dartCorpCodesMu.Lock()
 	defer dartCorpCodesMu.Unlock()
 
-	cachePath := dartCachePath()
-	info, err := os.Stat(cachePath)
-	if err == nil && time.Since(info.ModTime()) < dartCacheTTL {
-		data, err := os.ReadFile(cachePath)
-		if err == nil {
-			var codes map[string]string
-			if json.Unmarshal(data, &codes) == nil {
-				dartCorpCodes = codes
-				slog.Info("DART 기업코드 파일캐시 로드", "count", len(codes), "path", cachePath)
-				return codes, nil
-			}
-		}
+	store := newFileDARTCorpCodeStore(dartCachePath(), dartCacheTTL)
+	if codes, found, err := store.Load(); err == nil && found {
+		dartCorpCodes = codes
+		slog.Info("DART 기업코드 파일캐시 로드", "count", len(codes), "path", dartCachePath())
+		return codes, nil
 	}
 
 	if config.OpenDARTAPIKey == "" {
@@ -152,9 +145,9 @@ func loadCorpCodes() (map[string]string, error) {
 		return nil, err
 	}
 
-	os.MkdirAll(filepath.Dir(cachePath), 0755)
-	data, _ := json.Marshal(codes)
-	os.WriteFile(cachePath, data, 0644)
+	if err := store.Save(codes); err != nil {
+		slog.Warn("DART 기업코드 파일캐시 저장 실패", "err", err)
+	}
 
 	dartCorpCodes = codes
 	slog.Info("DART 기업코드 로드 완료", "count", len(codes))
