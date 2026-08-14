@@ -10,16 +10,10 @@ var toolCategories = []struct {
 	category string
 	tools    []string
 }{
-	{"naver (네이버 OpenAPI)", []string{
-		"naver_search_blog", "naver_search_news", "naver_search_cafe",
-		"naver_search_book", "naver_search_encyc", "naver_search_kin",
-		"naver_search_local", "naver_search_webkr", "naver_search_image",
-		"naver_search_shop", "naver_search_doc", "naver_check_adult",
-		"naver_convert_errata",
-	}},
-	{"github (GitHub API)", []string{
-		"github_list_repos", "github_list_prs", "github_get_pr",
-		"github_list_issues", "github_create_issue", "github_workflow_runs",
+	{"kakao (Daum 검색 + 카카오맵 Local API)", []string{
+		"kakao_search_web", "kakao_search_blog", "kakao_search_cafe",
+		"kakao_search_book", "kakao_search_image", "kakao_search_video",
+		"kakao_search_places",
 	}},
 	{"exchange (한국수출입은행)", []string{
 		"get_exchange_rates",

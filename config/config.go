@@ -1,14 +1,14 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/joho/godotenv"
 )
 
 var (
-	NaverClientID     string
-	NaverClientSecret string
+	KakaoRESTAPIKey string
 
 	ExchangeAPIKey string
 
@@ -21,8 +21,6 @@ var (
 
 	OpinetAPIKey string
 
-	GitHubToken string
-
 	NationalLibraryAPIKey string
 
 	PixabayAPIKey string
@@ -34,15 +32,16 @@ var (
 
 // Load는 envFile을 로딩한 뒤 모든 config 변수를 채운다.
 // envFile이 빈 문자열이면 ".env"를 시도한다 (없으면 무시).
-func Load(envFile string) {
+func Load(envFile string) error {
 	if envFile != "" {
-		godotenv.Load(envFile)
-	} else {
-		godotenv.Load()
+		if err := godotenv.Load(envFile); err != nil {
+			return fmt.Errorf("env 파일 로드 실패: %w", err)
+		}
+	} else if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf(".env 파일 로드 실패: %w", err)
 	}
 
-	NaverClientID = os.Getenv("NAVER_CLIENT_ID")
-	NaverClientSecret = os.Getenv("NAVER_CLIENT_SECRET")
+	KakaoRESTAPIKey = os.Getenv("KAKAO_REST_API_KEY")
 
 	ExchangeAPIKey = os.Getenv("EXCHANGE_API_KEY")
 
@@ -55,11 +54,10 @@ func Load(envFile string) {
 
 	OpinetAPIKey = os.Getenv("OPINET_API_KEY")
 
-	GitHubToken = os.Getenv("GITHUB_TOKEN")
-
 	NationalLibraryAPIKey = os.Getenv("NATIONAL_LIBRARY_API_KEY")
 
 	PixabayAPIKey = os.Getenv("PIXABAY_API_KEY")
 
 	MCPAuthToken = os.Getenv("MCP_AUTH_TOKEN")
+	return nil
 }

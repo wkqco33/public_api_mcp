@@ -15,15 +15,13 @@ type keyEntry struct {
 }
 
 var apiKeys = []keyEntry{
-	{"NAVER_CLIENT_ID", func() string { return config.NaverClientID }},
-	{"NAVER_CLIENT_SECRET", func() string { return config.NaverClientSecret }},
+	{"KAKAO_REST_API_KEY", func() string { return config.KakaoRESTAPIKey }},
 	{"EXCHANGE_API_KEY", func() string { return config.ExchangeAPIKey }},
 	{"PUBLIC_DATA_PORTAL_API_KEY", func() string { return config.PublicDataPortalAPIKey }},
 	{"SEOUL_OPEN_API_KEY", func() string { return config.SeoulOpenAPIKey }},
 	{"KMA_WEATHER_API_KEY", func() string { return config.KMAWeatherAPIKey }},
 	{"OPENDART_API_KEY", func() string { return config.OpenDARTAPIKey }},
 	{"OPINET_API_KEY", func() string { return config.OpinetAPIKey }},
-	{"GITHUB_TOKEN", func() string { return config.GitHubToken }},
 	{"NATIONAL_LIBRARY_API_KEY", func() string { return config.NationalLibraryAPIKey }},
 	{"PIXABAY_API_KEY", func() string { return config.PixabayAPIKey }},
 	{"MCP_AUTH_TOKEN", func() string { return config.MCPAuthToken }},

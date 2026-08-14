@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -50,15 +51,30 @@ func (debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
 	resp, err := customTransport.RoundTrip(req)
 	if err != nil {
-		slog.Debug("HTTP 실패", "method", req.Method, "url", req.URL.String(), "err", err)
+		slog.Debug("HTTP 실패", "method", req.Method, "url", redactedURL(req.URL), "err", err)
 		return nil, err
 	}
-	slog.Debug("HTTP", "method", req.Method, "url", req.URL.String(),
+	slog.Debug("HTTP", "method", req.Method, "url", redactedURL(req.URL),
 		"status", resp.StatusCode, "ms", time.Since(start).Milliseconds())
 	return resp, nil
 }
 
 var debugMu sync.Mutex
+
+func redactedURL(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	copy := *u
+	q := copy.Query()
+	for _, key := range []string{"key", "apiKey", "authKey", "serviceKey", "crtfc_key", "token", "access_token"} {
+		if q.Has(key) {
+			q.Set(key, "[REDACTED]")
+		}
+	}
+	copy.RawQuery = q.Encode()
+	return copy.String()
+}
 
 // SetDebug는 debug 모드를 활성화/비활성화한다.
 // 활성화 시 모든 HTTP 요청의 URL, 상태코드, 소요시간이 DEBUG 레벨로 기록된다.

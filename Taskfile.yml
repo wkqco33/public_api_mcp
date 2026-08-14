@@ -40,6 +40,13 @@ tasks:
     cmds:
       - go test -race ./...
 
+  check:
+    desc: 포맷, 정적 분석, race 테스트를 순서대로 실행
+    cmds:
+      - test -z "$(gofmt -l .)"
+      - go vet ./...
+      - go test -race ./...
+
   test-cover:
     desc: 커버리지 리포트 생성 (coverage.html)
     cmds:

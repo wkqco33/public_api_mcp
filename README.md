@@ -1,15 +1,14 @@
 # public-api-mcp
 
-한국 공공 API 42개를 MCP(Model Context Protocol) 서버로 노출합니다. Claude Desktop, Cline 등 MCP 클라이언트에서 바로 사용할 수 있습니다.
+한국 공공 API 30개를 MCP(Model Context Protocol) 서버로 노출합니다. Claude Desktop, Cline 등 MCP 클라이언트에서 바로 사용할 수 있습니다.
 
 ---
 
-## 도구 목록 (42개)
+## 도구 목록 (30개)
 
 | 카테고리 | 도구 | 필요 API 키 |
 |----------|------|-------------|
-| 네이버 검색 | `naver_search_blog`, `naver_search_news`, `naver_search_cafe`, `naver_search_book`, `naver_search_encyc`, `naver_search_kin`, `naver_search_local`, `naver_search_webkr`, `naver_search_image`, `naver_search_shop`, `naver_search_doc`, `naver_check_adult`, `naver_convert_errata` | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` |
-| GitHub | `github_list_repos`, `github_list_prs`, `github_get_pr`, `github_list_issues`, `github_create_issue`, `github_workflow_runs` | `GITHUB_TOKEN` |
+| 카카오 검색/장소 | `kakao_search_web`, `kakao_search_blog`, `kakao_search_cafe`, `kakao_search_book`, `kakao_search_image`, `kakao_search_video`, `kakao_search_places` | `KAKAO_REST_API_KEY` |
 | 환율 | `get_exchange_rates` | `EXCHANGE_API_KEY` |
 | 유가 | `get_fuel_avg_price`, `get_fuel_sido_price`, `get_fuel_low_top10` | `OPINET_API_KEY` |
 | 주식 | `get_stock_price`, `get_stock_analysis_data`, `get_stock_market_index` | `PUBLIC_DATA_PORTAL_API_KEY` |
@@ -28,7 +27,7 @@
 
 ### 사전 요구사항
 
-- Go 1.21 이상
+- Go 1.26 이상
 - [Task](https://taskfile.dev/installation/) (`brew install go-task` 또는 `go install github.com/go-task/task/v3/cmd/task@latest`)
 
 ### 빌드
@@ -58,9 +57,23 @@ go build -o public-api-mcp .
 task --list
 ```
 
+### 테스트 및 TDD 개발
+
+빠른 단위 테스트와 정적 분석은 다음 명령으로 실행합니다.
+
+```bash
+task check       # gofmt 검사 + go vet + race 테스트
+task test        # race detector 포함 전체 테스트
+task test-cover  # 커버리지 리포트 생성
+```
+
+외부 API 테스트는 기본적으로 로컬 `httptest.Server`를 사용하므로 네트워크나 API 키가 필요하지 않습니다. 실제 API를 호출하는 테스트는 기본 테스트에 포함하지 않습니다.
+
 ---
 
 ## API 키 설정
+
+네이버 검색 API와 GitHub 도구는 제거되었습니다. 검색 기능은 Kakao Developers의 Daum 검색 및 카카오맵 Local API를 사용합니다.
 
 ### .env 파일 생성
 
@@ -74,14 +87,13 @@ cp .env.example .env
 
 | 환경변수 | 서비스 | 발급 URL |
 |----------|--------|----------|
-| `NAVER_CLIENT_ID`<br>`NAVER_CLIENT_SECRET` | 네이버 OpenAPI | https://developers.naver.com/apps/#/register |
+| `KAKAO_REST_API_KEY` | Kakao Developers REST API (Daum 검색/카카오맵) | https://developers.kakao.com/ |
 | `EXCHANGE_API_KEY` | 한국수출입은행 환율 | https://www.koreaexim.go.kr/ir/HPHKIR020M01?apino=2 |
 | `PUBLIC_DATA_PORTAL_API_KEY` | 공공데이터포털 (주식, 부동산, 버스) | https://www.data.go.kr — 회원가입 후 원하는 API 신청 |
 | `SEOUL_OPEN_API_KEY` | 서울 열린데이터광장 (지하철) | https://data.seoul.go.kr |
 | `KMA_WEATHER_API_KEY` | 기상청 단기예보 | https://www.data.go.kr — "기상청_단기예보" 검색 후 신청 |
 | `OPENDART_API_KEY` | 금융감독원 DART | https://opendart.fss.or.kr |
 | `OPINET_API_KEY` | 한국석유공사 오피넷 | https://www.opinet.co.kr/user/custapi/custApiInfo.do |
-| `GITHUB_TOKEN` | GitHub Personal Access Token | https://github.com/settings/tokens — `repo` 스코프 필요 |
 | `NATIONAL_LIBRARY_API_KEY` | 국립중앙도서관 | https://www.nl.go.kr/NL/contents/N31101030000.do |
 | `PIXABAY_API_KEY` | Pixabay 이미지 | https://pixabay.com/api/docs/ |
 
@@ -312,7 +324,7 @@ VS Code `settings.json`에 추가합니다 (`Ctrl+Shift+P` → "Open User Settin
 
 ```
 time=2026-05-18T10:00:00+09:00 level=INFO msg="HTTP MCP 서버 시작" addr=127.0.0.1:18080
-time=2026-05-18T10:00:01+09:00 level=DEBUG msg=HTTP method=GET url="https://openapi.naver.com/..." status=200 ms=143
+time=2026-05-18T10:00:01+09:00 level=DEBUG msg=HTTP method=GET url="https://dapi.kakao.com/v2/search/blog?..." status=200 ms=143
 time=2026-05-18T10:00:02+09:00 level=DEBUG msg="환율 캐시 miss" date=20260518
 time=2026-05-18T10:00:03+09:00 level=WARN msg="네이버 API 오류 [429]: rate limit exceeded"
 ```
@@ -436,8 +448,7 @@ public_api_mcp/
 │   └── client.go        # 공유 HTTP 클라이언트 (debug RoundTripper)
 └── tools/
     ├── util.go           # 공유 헬퍼 (toolText, toolError)
-    ├── naver.go          # 네이버 OpenAPI (13개)
-    ├── github.go         # GitHub API (6개)
+    ├── kakao.go          # Kakao Daum 검색/Local API (7개)
     ├── exchange.go       # 환율 (1개)
     ├── fuel.go           # 유가 (3개)
     ├── stock.go          # 주식 (3개)

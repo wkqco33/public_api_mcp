@@ -84,8 +84,7 @@ func init() {
 
 func buildServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "public-api-mcp", Version: "0.1.0"}, nil)
-	tools.RegisterNaver(s)
-	tools.RegisterGitHub(s)
+	tools.RegisterKakao(s)
 	tools.RegisterExchange(s)
 	tools.RegisterFuel(s)
 	tools.RegisterStock(s)

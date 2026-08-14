@@ -95,47 +95,6 @@ func TestGetExchangeRatesNoData(t *testing.T) {
 	}
 }
 
-func TestGithubListReposSuccess(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`[{"full_name":"foo/bar","language":"Go","description":"테스트 저장소","stargazers_count":5}]`))
-	}))
-	defer ts.Close()
-	useTestServer(t, ts)
-
-	result, _, err := githubListRepos(context.Background(), nil, githubListReposInput{Username: "foo"})
-	if err != nil {
-		t.Fatalf("예상치 못한 Go 에러: %v", err)
-	}
-	if result.IsError {
-		t.Fatalf("에러 결과: %s", firstText(t, result))
-	}
-	text := firstText(t, result)
-	if !strings.Contains(text, "foo/bar") || !strings.Contains(text, "⭐5") {
-		t.Errorf("저장소 정보가 응답에 포함되지 않음: %s", text)
-	}
-}
-
-func TestGithubListPRsErrorStatus(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"message":"Not Found"}`))
-	}))
-	defer ts.Close()
-	useTestServer(t, ts)
-
-	result, _, err := githubListPRs(context.Background(), nil, githubRepoStateInput{Repo: "foo/bar"})
-	if err != nil {
-		t.Fatalf("예상치 못한 Go 에러: %v", err)
-	}
-	if !result.IsError {
-		t.Fatal("404 응답인데 에러로 처리되지 않음")
-	}
-	if !strings.Contains(firstText(t, result), "404") {
-		t.Errorf("상태 코드가 에러 메시지에 포함되지 않음: %s", firstText(t, result))
-	}
-}
-
 func TestGetRealEstateDataSuccess(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")

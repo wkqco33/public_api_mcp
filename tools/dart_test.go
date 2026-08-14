@@ -60,9 +60,9 @@ func TestResolveCorpCodeExactMatch(t *testing.T) {
 func TestResolveCorpCodePartialMatch(t *testing.T) {
 	// 부분 일치 — 가장 짧은 이름 우선 반환
 	setupTestCorpCodes(t, map[string]string{
-		"삼성전자":          "00126380",
-		"삼성전자서비스":       "00654321",
-		"삼성전자판매":        "00789012",
+		"삼성전자":    "00126380",
+		"삼성전자서비스": "00654321",
+		"삼성전자판매":  "00789012",
 	})
 
 	got, err := resolveCorpCode("삼성전자")
@@ -78,8 +78,8 @@ func TestResolveCorpCodePartialMatch(t *testing.T) {
 func TestResolveCorpCodeShortestFirst(t *testing.T) {
 	// 정확 일치 없고 부분 일치만 있을 때 — 가장 짧은 이름 우선
 	setupTestCorpCodes(t, map[string]string{
-		"현대자동차":    "00164742",
-		"현대자동차그룹":  "00999999",
+		"현대자동차":   "00164742",
+		"현대자동차그룹": "00999999",
 	})
 
 	got, err := resolveCorpCode("현대자")

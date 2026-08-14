@@ -15,7 +15,7 @@ var debug bool
 var RootCmd = &cobra.Command{
 	Use:   "public-api-mcp",
 	Short: "공공 API MCP 서버",
-	Long:  "한국 공공 API 37개를 MCP 프로토콜로 노출하는 서버",
+	Long:  "한국 공공 API를 MCP 프로토콜로 노출하는 서버",
 }
 
 func init() {
@@ -27,7 +27,9 @@ func init() {
 			level = slog.LevelDebug
 		}
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
-		config.Load(envFile)
+		if err := config.Load(envFile); err != nil {
+			return err
+		}
 		httpclient.SetDebug(debug)
 		return nil
 	}
