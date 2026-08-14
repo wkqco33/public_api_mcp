@@ -74,19 +74,17 @@ task test-cover  # 커버리지 리포트 생성 (coverage.html)
 각 외부 API 도구는 생성자에서 의존성을 주입받도록 구성되어 있어 단위 테스트가 용이합니다.
 
 ```go
-// 카카오 예시
+// 카카오 예시: 테스트용 client를 생성해 MCP 서버에 등록
 client := tools.NewKakaoClient(
     testServer.Client(), // *http.Client
     testServer.URL,      // base URL
     "test-key",          // API 키
 )
 
-result, _, _ := tools.GetRecommendedBooksWithClient(
-    context.Background(),
-    client,
-    tools.BookInput{},
-)
+tools.RegisterKakaoWithClient(server, client)
 ```
+
+각 도구는 `NewXxxClient(...)`와, 핸들러 단위에서는 `xxxWithClient(...)`(동일 패키지) 또는 `RegisterXxxWithClient(server, client)`(내보내진 변형)을 제공합니다.
 
 주입 가능한 의존성:
 
