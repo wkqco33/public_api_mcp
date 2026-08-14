@@ -119,7 +119,7 @@ func TestKakaoClientCanUseInjectedHTTPClient(t *testing.T) {
 		_, _ = w.Write([]byte(`{"meta":{},"documents":[{"title":"injected"}]}`))
 	}))
 	defer ts.Close()
-	client := newKakaoClient(ts.Client(), ts.URL, "injected-key")
+	client := NewKakaoClient(ts.Client(), ts.URL, "injected-key")
 	result, _, err := kakaoSearchRequestWithClient(context.Background(), client, "web", "test", 1, 1, "accuracy")
 	if err != nil || result.IsError || !strings.Contains(firstText(t, result), "injected") {
 		t.Fatalf("unexpected injected client result: %v", err)

@@ -36,15 +36,14 @@ type kakaoMeta struct {
 	IsEnd         bool `json:"is_end"`
 }
 
-type kakaoSearchResponse struct {
-	Meta      kakaoMeta        `json:"meta"`
-	Documents []map[string]any `json:"documents"`
+func RegisterKakao(s *mcp.Server) {
+	RegisterKakaoWithClient(s, defaultKakaoClient())
 }
 
-func RegisterKakao(s *mcp.Server) {
+func RegisterKakaoWithClient(s *mcp.Server, client *KakaoClient) {
 	register := func(name, description, collection string) {
 		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description}, withRecover(name, func(ctx context.Context, req *mcp.CallToolRequest, in kakaoSearchInput) (*mcp.CallToolResult, any, error) {
-			return kakaoSearch(ctx, collection, in)
+			return kakaoSearchWithClient(ctx, client, collection, in)
 		}))
 	}
 	register("kakao_search_web", "Daum 웹문서를 검색합니다.", "web")
@@ -53,10 +52,16 @@ func RegisterKakao(s *mcp.Server) {
 	register("kakao_search_book", "Daum 도서 정보를 검색합니다.", "book")
 	register("kakao_search_image", "Daum 이미지를 검색합니다.", "image")
 	register("kakao_search_video", "동영상 검색 결과를 조회합니다.", "vclip")
-	mcp.AddTool(s, &mcp.Tool{Name: "kakao_search_places", Description: "카카오맵 장소를 키워드로 검색합니다. 좌표와 반경을 지정하면 주변 장소를 검색합니다."}, withRecover("kakao_search_places", kakaoSearchPlaces))
+	mcp.AddTool(s, &mcp.Tool{Name: "kakao_search_places", Description: "카카오맵 장소를 키워드로 검색합니다. 좌표와 반경을 지정하면 주변 장소를 검색합니다."}, withRecover("kakao_search_places", func(ctx context.Context, req *mcp.CallToolRequest, in kakaoPlaceInput) (*mcp.CallToolResult, any, error) {
+		return kakaoSearchPlacesWithClient(ctx, client, req, in)
+	}))
 }
 
 func kakaoSearch(ctx context.Context, collection string, in kakaoSearchInput) (*mcp.CallToolResult, any, error) {
+	return kakaoSearchWithClient(ctx, defaultKakaoClient(), collection, in)
+}
+
+func kakaoSearchWithClient(ctx context.Context, client *KakaoClient, collection string, in kakaoSearchInput) (*mcp.CallToolResult, any, error) {
 	if strings.TrimSpace(in.Query) == "" {
 		return toolError("query는 비어 있을 수 없습니다"), nil, nil
 	}
@@ -64,28 +69,28 @@ func kakaoSearch(ctx context.Context, collection string, in kakaoSearchInput) (*
 	if err != nil {
 		return toolError("잘못된 검색 옵션: %v", err), nil, nil
 	}
-	return kakaoSearchRequest(ctx, collection, in.Query, page, size, sort)
+	return kakaoSearchRequestWithClient(ctx, client, collection, in.Query, page, size, sort)
 }
 
-type httpDoer interface {
+type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-type kakaoClient struct {
-	httpClient httpDoer
+type KakaoClient struct {
+	httpClient HTTPDoer
 	baseURL    string
 	apiKey     string
 }
 
-func newKakaoClient(client httpDoer, baseURL, apiKey string) *kakaoClient {
-	return &kakaoClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+func NewKakaoClient(client HTTPDoer, baseURL, apiKey string) *KakaoClient {
+	return &KakaoClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
 }
 
-func defaultKakaoClient() *kakaoClient {
-	return newKakaoClient(httpclient.Default, "https://dapi.kakao.com", config.KakaoRESTAPIKey)
+func defaultKakaoClient() *KakaoClient {
+	return NewKakaoClient(httpclient.Default, "https://dapi.kakao.com", config.KakaoRESTAPIKey)
 }
 
-func (c *kakaoClient) do(req *http.Request) ([]byte, int, error) {
+func (c *KakaoClient) do(req *http.Request) ([]byte, int, error) {
 	if c.apiKey == "" {
 		return nil, 0, fmt.Errorf("KAKAO_REST_API_KEY가 설정되지 않았습니다")
 	}
@@ -98,7 +103,7 @@ func kakaoSearchRequest(ctx context.Context, collection, query string, page, siz
 	return kakaoSearchRequestWithClient(ctx, defaultKakaoClient(), collection, query, page, size, sort)
 }
 
-func kakaoSearchRequestWithClient(ctx context.Context, client *kakaoClient, collection, query string, page, size int, sort string) (*mcp.CallToolResult, any, error) {
+func kakaoSearchRequestWithClient(ctx context.Context, client *KakaoClient, collection, query string, page, size int, sort string) (*mcp.CallToolResult, any, error) {
 	version := "v2"
 	if collection == "book" {
 		version = "v3"
@@ -120,21 +125,21 @@ func kakaoSearchRequestWithClient(ctx context.Context, client *kakaoClient, coll
 	if status != http.StatusOK {
 		return toolError("카카오 API 오류 [%d]: %s", status, string(body)), nil, nil
 	}
-	var data kakaoSearchResponse
-	if err := json.Unmarshal(body, &data); err != nil {
+	formatted, empty, err := formatKakaoSearchResponse(collection, body)
+	if err != nil {
 		return toolError("카카오 응답 파싱 실패: %v", err), nil, nil
 	}
-	if len(data.Documents) == 0 {
+	if empty {
 		return toolText(fmt.Sprintf("'%s'에 대한 검색 결과가 없습니다.", query)), nil, nil
 	}
-	return toolText(formatKakaoDocuments(collection, data.Documents)), nil, nil
+	return toolText(formatted), nil, nil
 }
 
 func kakaoSearchPlaces(ctx context.Context, req *mcp.CallToolRequest, in kakaoPlaceInput) (*mcp.CallToolResult, any, error) {
 	return kakaoSearchPlacesWithClient(ctx, defaultKakaoClient(), req, in)
 }
 
-func kakaoSearchPlacesWithClient(ctx context.Context, client *kakaoClient, _ *mcp.CallToolRequest, in kakaoPlaceInput) (*mcp.CallToolResult, any, error) {
+func kakaoSearchPlacesWithClient(ctx context.Context, client *KakaoClient, _ *mcp.CallToolRequest, in kakaoPlaceInput) (*mcp.CallToolResult, any, error) {
 	if strings.TrimSpace(in.Query) == "" {
 		return toolError("query는 비어 있을 수 없습니다"), nil, nil
 	}
@@ -190,7 +195,7 @@ func kakaoSearchPlacesWithClient(ctx context.Context, client *kakaoClient, _ *mc
 	if status != http.StatusOK {
 		return toolError("카카오 API 오류 [%d]: %s", status, string(body)), nil, nil
 	}
-	var data kakaoSearchResponse
+	var data kakaoResponse[kakaoPlaceDocument]
 	if err := json.Unmarshal(body, &data); err != nil {
 		return toolError("카카오 응답 파싱 실패: %v", err), nil, nil
 	}
