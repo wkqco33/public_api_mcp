@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"wkqcosoft.com/public-api-mcp/config"
-	"wkqcosoft.com/public-api-mcp/httpclient"
+	"github.com/wkqco33/public_api_mcp/config"
+	"github.com/wkqco33/public_api_mcp/httpclient"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

@@ -1,4 +1,4 @@
-module wkqcosoft.com/public-api-mcp
+module github.com/wkqco33/public_api_mcp
 
 go 1.26.3
 

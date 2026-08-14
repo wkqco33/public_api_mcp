@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"wkqcosoft.com/public-api-mcp/config"
+	"github.com/wkqco33/public_api_mcp/config"
 )
 
 type keyEntry struct {

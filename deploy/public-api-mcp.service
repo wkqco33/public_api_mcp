@@ -1,6 +1,6 @@
 [Unit]
 Description=Public API MCP Server
-Documentation=https://github.com/wkqcosoft/public-api-mcp
+Documentation=https://github.com/wkqco33/public_api_mcp
 After=network-online.target
 Wants=network-online.target
 

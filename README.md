@@ -1,6 +1,15 @@
 # public-api-mcp
 
+> 한국 공공·민간 API를 MCP(Model Context Protocol) 서버로 노출합니다.
+
+[![Go Version](https://img.shields.io/badge/Go-1.26-blue)](https://go.dev/dl/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/wkqco33/public_api_mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/wkqco33/public_api_mcp/actions/workflows/ci.yml)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 한국 공공 API 30개를 MCP(Model Context Protocol) 서버로 노출합니다. Claude Desktop, Cline 등 MCP 클라이언트에서 바로 사용할 수 있습니다.
+
+기여 가이드는 [CONTRIBUTING.md](CONTRIBUTING.md)를, 에이전트용 TDD 규칙은 [AGENTS.md](AGENTS.md)를 참고하세요.
 
 ---
 
@@ -33,7 +42,7 @@
 ### 빌드
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/wkqco33/public_api_mcp.git
 cd public_api_mcp
 task          # 빌드
 task install  # /usr/local/bin에 설치 (sudo 필요할 수 있음)
@@ -169,6 +178,8 @@ cp .env.example .env
 
 - **stdio**: 클라이언트가 바이너리를 직접 실행. `/절대경로/public-api-mcp` 부분을 실제 경로로 교체.
 - **SSE**: 서버를 별도로 먼저 기동(`serve http`)한 뒤 클라이언트가 URL로 접속. `serve http`는 `MCP_AUTH_TOKEN`이 설정되어 있지 않으면 시작을 거부합니다 — `public-api-mcp config generate-token`으로 토큰을 생성해 `.env`에 넣고, 아래 예시의 `<MCP_AUTH_TOKEN>` 부분을 그 값으로 교체하세요. 헤더를 지원하지 않는 클라이언트는 SSE 대신 stdio를 사용하세요.
+
+> ⚠️ 아래 SSE 예시의 `https://api-mcp.wkqcosoft.cloud/sse` 주소는 **관리자의 배포 주소**입니다. 직접 배포하는 경우 자신의 서버 URL로 교체하세요.
 
 ### Claude Desktop
 
@@ -352,7 +363,7 @@ VS Code `settings.json`에 추가합니다 (`Ctrl+Shift+P` → "Open User Settin
 time=2026-05-18T10:00:00+09:00 level=INFO msg="HTTP MCP 서버 시작" addr=127.0.0.1:18080
 time=2026-05-18T10:00:01+09:00 level=DEBUG msg=HTTP method=GET url="https://dapi.kakao.com/v2/search/blog?..." status=200 ms=143
 time=2026-05-18T10:00:02+09:00 level=DEBUG msg="환율 캐시 miss" date=20260518
-time=2026-05-18T10:00:03+09:00 level=WARN msg="네이버 API 오류 [429]: rate limit exceeded"
+time=2026-05-18T10:00:03+09:00 level=WARN msg="카카오 API 오류 [429]: quota exceeded"
 ```
 
 기본 모드(--debug 없음)에서는 WARN 이상만 출력되며, stdio 전송 시 stdout은 MCP JSON-RPC 전용으로 유지됩니다.
@@ -496,3 +507,13 @@ public_api_mcp/
 ```
 
 > 각 외부 API 도구는 `NewXxxClient(httpDoer, baseURL, apiKey)` 형태의 생성자를 제공합니다. HTTP client·base URL·API 키(필요 시 Clock)를 주입받아 테스트에서 실제 네트워크와 API 키 없이 검증할 수 있습니다. 상세 구조와 테스트 원칙은 아래 **테스트 및 TDD 개발** 및 각 소스 파일의 주석을 참고하세요.
+
+---
+
+## 라이선스
+
+[MIT](LICENSE) 라이선스로 배포됩니다. 자세한 내용은 `LICENSE` 파일을 참고하세요.
+
+## 기여
+
+버그 리포트, 기능 제안, PR은 언제나 환영합니다. 시작 전에 [CONTRIBUTING.md](CONTRIBUTING.md)와 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)를 읽어주세요. 보안 취약점은 [SECURITY.md](SECURITY.md)를 참고해 비공개로 신고해 주세요.

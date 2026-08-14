@@ -10,8 +10,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
-	"wkqcosoft.com/public-api-mcp/config"
-	"wkqcosoft.com/public-api-mcp/tools"
+	"github.com/wkqco33/public_api_mcp/config"
+	"github.com/wkqco33/public_api_mcp/tools"
 )
 
 var addr string

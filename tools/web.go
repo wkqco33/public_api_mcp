@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"wkqcosoft.com/public-api-mcp/cache"
-	"wkqcosoft.com/public-api-mcp/httpclient"
+	"github.com/wkqco33/public_api_mcp/cache"
+	"github.com/wkqco33/public_api_mcp/httpclient"
 )
 
 var newsCache = cache.New[string, string]()

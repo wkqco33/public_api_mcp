@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"wkqcosoft.com/public-api-mcp/config"
-	"wkqcosoft.com/public-api-mcp/httpclient"
+	"github.com/wkqco33/public_api_mcp/config"
+	"github.com/wkqco33/public_api_mcp/httpclient"
 )
 
 var envFile string

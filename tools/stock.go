@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"wkqcosoft.com/public-api-mcp/cache"
-	"wkqcosoft.com/public-api-mcp/config"
-	"wkqcosoft.com/public-api-mcp/httpclient"
+	"github.com/wkqco33/public_api_mcp/cache"
+	"github.com/wkqco33/public_api_mcp/config"
+	"github.com/wkqco33/public_api_mcp/httpclient"
 )
 
 var stockCache = cache.New[string, string]()

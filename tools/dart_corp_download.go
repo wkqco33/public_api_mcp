@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"wkqcosoft.com/public-api-mcp/httpclient"
+	"github.com/wkqco33/public_api_mcp/httpclient"
 )
 
 type dartCorpCodeDownloader interface {

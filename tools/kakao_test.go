@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"wkqcosoft.com/public-api-mcp/config"
+	"github.com/wkqco33/public_api_mcp/config"
 )
 
 func TestKakaoSearchSuccess(t *testing.T) {
