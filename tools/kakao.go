@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"net/http"
 	"strings"
 
@@ -66,43 +65,6 @@ func kakaoSearch(ctx context.Context, collection string, in kakaoSearchInput) (*
 		return toolError("잘못된 검색 옵션: %v", err), nil, nil
 	}
 	return kakaoSearchRequest(ctx, collection, in.Query, page, size, sort)
-}
-
-func normalizeKakaoSearch(collection string, page, size int, sort string) (int, int, string, error) {
-	if page <= 0 {
-		page = 1
-	}
-	maxPage := 50
-	if collection == "vclip" {
-		maxPage = 15
-	}
-	if page > maxPage {
-		return 0, 0, "", fmt.Errorf("page는 %d 이하이어야 합니다", maxPage)
-	}
-	if size <= 0 {
-		size = 10
-	}
-	maxSize := 50
-	if collection == "image" {
-		maxSize = 80
-	}
-	if collection == "vclip" {
-		maxSize = 30
-	}
-	if size > maxSize {
-		return 0, 0, "", fmt.Errorf("size는 %d 이하이어야 합니다", maxSize)
-	}
-	if sort == "" {
-		sort = "accuracy"
-	}
-	if collection == "book" {
-		if sort != "accuracy" && sort != "latest" {
-			return 0, 0, "", fmt.Errorf("책 sort는 accuracy 또는 latest이어야 합니다")
-		}
-	} else if sort != "accuracy" && sort != "recency" {
-		return 0, 0, "", fmt.Errorf("sort는 accuracy 또는 recency이어야 합니다")
-	}
-	return page, size, sort, nil
 }
 
 type httpDoer interface {
@@ -236,67 +198,4 @@ func kakaoSearchPlacesWithClient(ctx context.Context, client *kakaoClient, _ *mc
 		return toolText(fmt.Sprintf("'%s'에 대한 장소 검색 결과가 없습니다.", in.Query)), nil, nil
 	}
 	return toolText(formatKakaoPlaces(data.Documents)), nil, nil
-}
-
-func formatKakaoDocuments(collection string, docs []map[string]any) string {
-	var sb strings.Builder
-	for _, d := range docs {
-		title := stripHTMLTags(kakaoString(d, "title"))
-		if title == "" {
-			title = kakaoString(d, "name")
-		}
-		link := kakaoString(d, "url")
-		if link == "" {
-			link = kakaoString(d, "doc_url")
-		}
-		contents := stripHTMLTags(kakaoString(d, "contents"))
-		fmt.Fprintf(&sb, "제목: %s\n링크: %s\n설명: %s", title, link, contents)
-		if collection == "blog" {
-			fmt.Fprintf(&sb, "\n블로그: %s", kakaoString(d, "blogname"))
-		}
-		if collection == "cafe" {
-			fmt.Fprintf(&sb, "\n카페: %s", kakaoString(d, "cafename"))
-		}
-		if collection == "book" {
-			fmt.Fprintf(&sb, "\n저자: %s\n출판사: %s\nISBN: %s", kakaoString(d, "authors"), kakaoString(d, "publisher"), kakaoString(d, "isbn"))
-		}
-		if collection == "image" {
-			fmt.Fprintf(&sb, "\n이미지: %s\n출처: %s", kakaoString(d, "image_url"), kakaoString(d, "display_sitename"))
-		}
-		if collection == "vclip" {
-			fmt.Fprintf(&sb, "\n업로더: %s\n썸네일: %s", kakaoString(d, "author"), kakaoString(d, "thumbnail"))
-		}
-		sb.WriteString("\n---\n")
-	}
-	return sb.String()
-}
-
-func formatKakaoPlaces(docs []map[string]any) string {
-	var sb strings.Builder
-	for _, d := range docs {
-		fmt.Fprintf(&sb, "장소: %s\n카테고리: %s\n전화: %s\n주소: %s\n도로명: %s\n좌표: %s, %s\n링크: %s\n---\n", kakaoString(d, "place_name"), kakaoString(d, "category_name"), kakaoString(d, "phone"), kakaoString(d, "address_name"), kakaoString(d, "road_address_name"), kakaoString(d, "x"), kakaoString(d, "y"), kakaoString(d, "place_url"))
-	}
-	return sb.String()
-}
-
-func stripHTMLTags(s string) string {
-	s = strings.ReplaceAll(s, "<b>", "")
-	s = strings.ReplaceAll(s, "</b>", "")
-	return html.UnescapeString(s)
-}
-
-func kakaoString(m map[string]any, key string) string {
-	if s, ok := m[key].(string); ok {
-		return html.UnescapeString(s)
-	}
-	if a, ok := m[key].([]any); ok {
-		var values []string
-		for _, v := range a {
-			if s, ok := v.(string); ok {
-				values = append(values, s)
-			}
-		}
-		return strings.Join(values, ", ")
-	}
-	return ""
 }
