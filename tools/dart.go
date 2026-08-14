@@ -100,6 +100,13 @@ func dartCachePath() string {
 }
 
 func loadCorpCodes() (map[string]string, error) {
+	return loadCorpCodesWithDependencies(
+		newFileDARTCorpCodeStore(dartCachePath(), dartCacheTTL),
+		&httpDARTCorpCodeDownloader{defaultDARTClient()},
+	)
+}
+
+func loadCorpCodesWithDependencies(store dartCorpCodeStore, downloader dartCorpCodeDownloader) (map[string]string, error) {
 	dartCorpCodesMu.RLock()
 	if dartCorpCodes != nil {
 		dartCorpCodesMu.RUnlock()
@@ -110,15 +117,10 @@ func loadCorpCodes() (map[string]string, error) {
 	dartCorpCodesMu.Lock()
 	defer dartCorpCodesMu.Unlock()
 
-	store := newFileDARTCorpCodeStore(dartCachePath(), dartCacheTTL)
 	if codes, found, err := store.Load(); err == nil && found {
 		dartCorpCodes = codes
 		slog.Info("DART 기업코드 파일캐시 로드", "count", len(codes), "path", dartCachePath())
 		return codes, nil
-	}
-
-	if config.OpenDARTAPIKey == "" {
-		return nil, fmt.Errorf("OPENDART_API_KEY가 설정되지 않았습니다")
 	}
 
 	slog.Info("DART 기업코드 다운로드 중")
@@ -127,17 +129,10 @@ func loadCorpCodes() (map[string]string, error) {
 	// 요청이 취소돼도 캐시를 기다리는 다른 동시 호출자에 영향이 없어야 하기 때문.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://opendart.fss.or.kr/api/corpCode.xml", nil)
-	if err != nil {
-		return nil, fmt.Errorf("요청 생성 실패: %w", err)
-	}
-	q := req.URL.Query()
-	q.Set("crtfc_key", config.OpenDARTAPIKey)
-	req.URL.RawQuery = q.Encode()
 
-	zipData, _, err := httpclient.FetchBody(req, 50*1024*1024) // 50MB 제한
+	zipData, err := downloader.Download(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("기업코드 다운로드 실패: %w", err)
+		return nil, err
 	}
 
 	codes, err := parseCorpCodeZip(zipData)
