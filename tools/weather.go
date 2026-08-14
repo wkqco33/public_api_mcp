@@ -55,26 +55,44 @@ type weatherForecastInput struct {
 }
 
 type WeatherClock interface{ Now() time.Time }
+type WeatherHTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+type WeatherClient struct {
+	httpClient WeatherHTTPDoer
+	baseURL    string
+	apiKey     string
+}
+
+func NewWeatherClient(client WeatherHTTPDoer, baseURL, apiKey string) *WeatherClient {
+	return &WeatherClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+}
+func defaultWeatherClient() *WeatherClient {
+	return NewWeatherClient(httpclient.Default, "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0", config.KMAWeatherAPIKey)
+}
+
 type systemWeatherClock struct{}
 
 func (systemWeatherClock) Now() time.Time { return time.Now() }
 
 func RegisterWeather(s *mcp.Server) {
-	RegisterWeatherWithClock(s, systemWeatherClock{})
+	RegisterWeatherWithDependencies(s, defaultWeatherClient(), systemWeatherClock{})
 }
-
 func RegisterWeatherWithClock(s *mcp.Server, clock WeatherClock) {
+	RegisterWeatherWithDependencies(s, defaultWeatherClient(), clock)
+}
+func RegisterWeatherWithDependencies(s *mcp.Server, client *WeatherClient, clock WeatherClock) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_current_weather",
 		Description: "기상청 초단기실황으로 현재 날씨(기온, 습도, 강수, 풍속) 조회.",
 	}, withRecover("get_current_weather", func(ctx context.Context, req *mcp.CallToolRequest, in weatherInput) (*mcp.CallToolResult, any, error) {
-		return getCurrentWeatherWithClock(ctx, clock, in)
+		return getCurrentWeatherWithDependencies(ctx, client, clock, in)
 	}))
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_weather_forecast",
 		Description: "기상청 단기예보로 시간대별 날씨 예보 조회 (1~3일).",
 	}, withRecover("get_weather_forecast", func(ctx context.Context, req *mcp.CallToolRequest, in weatherForecastInput) (*mcp.CallToolResult, any, error) {
-		return getWeatherForecastWithClock(ctx, clock, in)
+		return getWeatherForecastWithDependencies(ctx, client, clock, in)
 	}))
 }
 
@@ -189,15 +207,18 @@ func kmaBaseTimeVilageAt(current time.Time) (string, string) {
 }
 
 func kmaGet(ctx context.Context, endpoint string, params map[string]string) (map[string]any, error) {
-	if config.KMAWeatherAPIKey == "" {
+	return kmaGetWithClient(ctx, defaultWeatherClient(), endpoint, params)
+}
+func kmaGetWithClient(ctx context.Context, client *WeatherClient, endpoint string, params map[string]string) (map[string]any, error) {
+	if client.apiKey == "" {
 		return nil, fmt.Errorf("KMA_WEATHER_API_KEY가 설정되지 않았습니다")
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/"+endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", client.baseURL+"/"+endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("요청 생성 실패: %w", err)
 	}
 	q := req.URL.Query()
-	q.Set("serviceKey", config.KMAWeatherAPIKey)
+	q.Set("serviceKey", client.apiKey)
 	q.Set("dataType", "JSON")
 	q.Set("pageNo", "1")
 	for k, v := range params {
@@ -205,7 +226,7 @@ func kmaGet(ctx context.Context, endpoint string, params map[string]string) (map
 	}
 	req.URL.RawQuery = q.Encode()
 
-	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	body, _, err := httpclient.FetchBodyWithClient(client.httpClient, req, maxAPIBodyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -229,6 +250,9 @@ func getCurrentWeather(ctx context.Context, _ *mcp.CallToolRequest, in weatherIn
 }
 
 func getCurrentWeatherWithClock(ctx context.Context, clock WeatherClock, in weatherInput) (*mcp.CallToolResult, any, error) {
+	return getCurrentWeatherWithDependencies(ctx, defaultWeatherClient(), clock, in)
+}
+func getCurrentWeatherWithDependencies(ctx context.Context, client *WeatherClient, clock WeatherClock, in weatherInput) (*mcp.CallToolResult, any, error) {
 	loc := findLocation(in.Location)
 	if loc == nil {
 		return toolError("'%s' 지역을 찾을 수 없습니다", in.Location), nil, nil
@@ -242,7 +266,7 @@ func getCurrentWeatherWithClock(ctx context.Context, clock WeatherClock, in weat
 	slog.Debug("날씨 API 조회", "location", in.Location, "nx", loc.NX, "ny", loc.NY)
 
 	baseDate, baseTime := kmaBaseTimeNcstAt(clock.Now())
-	body, err := kmaGet(ctx, "getUltraSrtNcst", map[string]string{
+	body, err := kmaGetWithClient(ctx, client, "getUltraSrtNcst", map[string]string{
 		"numOfRows": "10",
 		"base_date": baseDate,
 		"base_time": baseTime,
@@ -287,6 +311,9 @@ func getWeatherForecast(ctx context.Context, _ *mcp.CallToolRequest, in weatherF
 }
 
 func getWeatherForecastWithClock(ctx context.Context, clock WeatherClock, in weatherForecastInput) (*mcp.CallToolResult, any, error) {
+	return getWeatherForecastWithDependencies(ctx, defaultWeatherClient(), clock, in)
+}
+func getWeatherForecastWithDependencies(ctx context.Context, client *WeatherClient, clock WeatherClock, in weatherForecastInput) (*mcp.CallToolResult, any, error) {
 	loc := findLocation(in.Location)
 	if loc == nil {
 		return toolError("'%s' 지역을 찾을 수 없습니다", in.Location), nil, nil
@@ -309,7 +336,7 @@ func getWeatherForecastWithClock(ctx context.Context, clock WeatherClock, in wea
 
 	baseDate, baseTime := kmaBaseTimeVilageAt(clock.Now())
 	numRows := days * 24 * 12
-	body, err := kmaGet(ctx, "getVilageFcst", map[string]string{
+	body, err := kmaGetWithClient(ctx, client, "getVilageFcst", map[string]string{
 		"numOfRows": fmt.Sprintf("%d", numRows),
 		"base_date": baseDate,
 		"base_time": baseTime,
