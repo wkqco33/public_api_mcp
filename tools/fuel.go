@@ -40,23 +40,42 @@ func RegisterFuel(s *mcp.Server) {
 	}, withRecover("get_fuel_low_top10", getFuelLowTop10))
 }
 
+type FuelHTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+type opinetClient struct {
+	httpClient FuelHTTPDoer
+	baseURL    string
+	apiKey     string
+}
+
+func NewOpinetClient(client FuelHTTPDoer, baseURL, apiKey string) *opinetClient {
+	return &opinetClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+}
+func defaultOpinetClient() *opinetClient {
+	return NewOpinetClient(httpclient.Default, "https://www.opinet.co.kr/api", config.OpinetAPIKey)
+}
+
 func opinetGet(ctx context.Context, endpoint string, params map[string]string) (map[string]any, error) {
-	if config.OpinetAPIKey == "" {
+	return opinetGetWithClient(ctx, defaultOpinetClient(), endpoint, params)
+}
+func opinetGetWithClient(ctx context.Context, client *opinetClient, endpoint string, params map[string]string) (map[string]any, error) {
+	if client.apiKey == "" {
 		return nil, fmt.Errorf("OPINET_API_KEY가 설정되지 않았습니다")
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.opinet.co.kr/api/"+endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", client.baseURL+"/"+endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("요청 생성 실패: %w", err)
 	}
 	q := req.URL.Query()
-	q.Set("code", config.OpinetAPIKey)
+	q.Set("code", client.apiKey)
 	q.Set("out", "json")
 	for k, v := range params {
 		q.Set(k, v)
 	}
 	req.URL.RawQuery = q.Encode()
 
-	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	body, _, err := httpclient.FetchBodyWithClient(client.httpClient, req, maxAPIBodyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -102,11 +121,14 @@ func parseFloat(v any) float64 {
 }
 
 func getFuelAvgPrice(ctx context.Context, _ *mcp.CallToolRequest, in fuelAvgInput) (*mcp.CallToolResult, any, error) {
+	return getFuelAvgPriceWithClient(ctx, defaultOpinetClient(), in)
+}
+func getFuelAvgPriceWithClient(ctx context.Context, client *opinetClient, in fuelAvgInput) (*mcp.CallToolResult, any, error) {
 	params := map[string]string{}
 	if in.Prodcd != "" {
 		params["prodcd"] = in.Prodcd
 	}
-	data, err := opinetGet(ctx, "avgAllPrice.do", params)
+	data, err := opinetGetWithClient(ctx, client, "avgAllPrice.do", params)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}
@@ -141,6 +163,9 @@ type fuelSidoInput struct {
 }
 
 func getFuelSidoPrice(ctx context.Context, _ *mcp.CallToolRequest, in fuelSidoInput) (*mcp.CallToolResult, any, error) {
+	return getFuelSidoPriceWithClient(ctx, defaultOpinetClient(), in)
+}
+func getFuelSidoPriceWithClient(ctx context.Context, client *opinetClient, in fuelSidoInput) (*mcp.CallToolResult, any, error) {
 	params := map[string]string{}
 	if in.Sido != "" {
 		params["sido"] = in.Sido
@@ -148,7 +173,7 @@ func getFuelSidoPrice(ctx context.Context, _ *mcp.CallToolRequest, in fuelSidoIn
 	if in.Prodcd != "" {
 		params["prodcd"] = in.Prodcd
 	}
-	data, err := opinetGet(ctx, "avgSidoPrice.do", params)
+	data, err := opinetGetWithClient(ctx, client, "avgSidoPrice.do", params)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}
@@ -206,6 +231,9 @@ type fuelLowTop10Input struct {
 }
 
 func getFuelLowTop10(ctx context.Context, _ *mcp.CallToolRequest, in fuelLowTop10Input) (*mcp.CallToolResult, any, error) {
+	return getFuelLowTop10WithClient(ctx, defaultOpinetClient(), in)
+}
+func getFuelLowTop10WithClient(ctx context.Context, client *opinetClient, in fuelLowTop10Input) (*mcp.CallToolResult, any, error) {
 	prod := strings.TrimSpace(in.Prodcd)
 	if prod == "" {
 		return toolError("제품코드(prodcd)는 필수 입력 항목입니다 (예: B027)"), nil, nil
@@ -221,7 +249,7 @@ func getFuelLowTop10(ctx context.Context, _ *mcp.CallToolRequest, in fuelLowTop1
 		"area":   area,
 	}
 
-	data, err := opinetGet(ctx, "lowTop10.do", params)
+	data, err := opinetGetWithClient(ctx, client, "lowTop10.do", params)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}

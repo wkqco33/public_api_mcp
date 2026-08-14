@@ -53,11 +53,45 @@ func RegisterStock(s *mcp.Server) {
 	}, withRecover("get_stock_market_index", getStockMarketIndex))
 }
 
-func getStockPrice(ctx context.Context, _ *mcp.CallToolRequest, in stockPriceInput) (*mcp.CallToolResult, any, error) {
-	if config.PublicDataPortalAPIKey == "" {
-		return toolError("PUBLIC_DATA_PORTAL_API_KEY가 설정되지 않았습니다"), nil, nil
-	}
+type StockHTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+type stockClient struct {
+	httpClient StockHTTPDoer
+	baseURL    string
+	apiKey     string
+}
 
+func NewStockClient(client StockHTTPDoer, baseURL, apiKey string) *stockClient {
+	return &stockClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+}
+func defaultStockClient() *stockClient {
+	return NewStockClient(httpclient.Default, "https://apis.data.go.kr/1160100/service", config.PublicDataPortalAPIKey)
+}
+func (c *stockClient) do(ctx context.Context, path string, params map[string]string) ([]byte, int, error) {
+	if c.apiKey == "" {
+		return nil, 0, fmt.Errorf("PUBLIC_DATA_PORTAL_API_KEY가 설정되지 않았습니다")
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+path, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("요청 생성 실패: %w", err)
+	}
+	q := req.URL.Query()
+	q.Set("serviceKey", c.apiKey)
+	q.Set("pageNo", "1")
+	q.Set("resultType", "json")
+	for k, v := range params {
+		q.Set(k, v)
+	}
+	req.URL.RawQuery = q.Encode()
+	return httpclient.FetchBodyWithClient(c.httpClient, req, maxAPIBodyBytes)
+}
+
+func getStockPrice(ctx context.Context, _ *mcp.CallToolRequest, in stockPriceInput) (*mcp.CallToolResult, any, error) {
+	return getStockPriceWithClient(ctx, defaultStockClient(), in)
+}
+
+func getStockPriceWithClient(ctx context.Context, client *stockClient, in stockPriceInput) (*mcp.CallToolResult, any, error) {
 	cacheKey := fmt.Sprintf("%s:%s:%s:%s", in.ItemName, in.BaseDate, in.BeginDate, in.EndDate)
 	if cached, ok := stockCache.Get(cacheKey); ok {
 		slog.Debug("주식 캐시 hit", "key", cacheKey)
@@ -70,33 +104,24 @@ func getStockPrice(ctx context.Context, _ *mcp.CallToolRequest, in stockPriceInp
 		numOfRows = 10
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo", nil)
-	if err != nil {
-		return toolError("요청 생성 실패: %v", err), nil, nil
-	}
-	q := req.URL.Query()
-	q.Set("serviceKey", config.PublicDataPortalAPIKey)
-	q.Set("numOfRows", fmt.Sprintf("%d", numOfRows))
-	q.Set("pageNo", "1")
-	q.Set("resultType", "json")
+	params := map[string]string{"numOfRows": fmt.Sprintf("%d", numOfRows)}
 	if in.ItemName != "" {
-		q.Set("itmsNm", in.ItemName)
+		params["itmsNm"] = in.ItemName
 	}
 	if in.BaseDate != "" {
-		q.Set("basDt", in.BaseDate)
+		params["basDt"] = in.BaseDate
 	}
 	if in.BeginDate != "" {
-		q.Set("beginBasDt", in.BeginDate)
+		params["beginBasDt"] = in.BeginDate
 	}
 	if in.EndDate != "" {
-		q.Set("endBasDt", in.EndDate)
+		params["endBasDt"] = in.EndDate
 	}
 	if in.MarketCategory != "" {
-		q.Set("mrktCls", in.MarketCategory)
+		params["mrktCls"] = in.MarketCategory
 	}
-	req.URL.RawQuery = q.Encode()
 
-	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	body, _, err := client.do(ctx, "/GetStockSecuritiesInfoService/getStockPriceInfo", params)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}
@@ -173,39 +198,30 @@ func getStockAnalysisData(ctx context.Context, _ *mcp.CallToolRequest, in stockA
 }
 
 func getStockMarketIndex(ctx context.Context, _ *mcp.CallToolRequest, in stockMarketIndexInput) (*mcp.CallToolResult, any, error) {
-	if config.PublicDataPortalAPIKey == "" {
-		return toolError("PUBLIC_DATA_PORTAL_API_KEY가 설정되지 않았습니다"), nil, nil
-	}
+	return getStockMarketIndexWithClient(ctx, defaultStockClient(), in)
+}
 
+func getStockMarketIndexWithClient(ctx context.Context, client *stockClient, in stockMarketIndexInput) (*mcp.CallToolResult, any, error) {
 	numOfRows := in.NumOfRows
 	if numOfRows <= 0 {
 		numOfRows = 10
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://apis.data.go.kr/1160100/service/GetMarketIndexInfoService/getStockMarketIndex", nil)
-	if err != nil {
-		return toolError("요청 생성 실패: %v", err), nil, nil
-	}
-	q := req.URL.Query()
-	q.Set("serviceKey", config.PublicDataPortalAPIKey)
-	q.Set("numOfRows", fmt.Sprintf("%d", numOfRows))
-	q.Set("pageNo", "1")
-	q.Set("resultType", "json")
+	params := map[string]string{"numOfRows": fmt.Sprintf("%d", numOfRows)}
 	if in.IndexName != "" {
-		q.Set("idxNm", in.IndexName)
+		params["idxNm"] = in.IndexName
 	}
 	if in.BaseDate != "" {
-		q.Set("basDt", in.BaseDate)
+		params["basDt"] = in.BaseDate
 	}
 	if in.BeginDate != "" {
-		q.Set("beginBasDt", in.BeginDate)
+		params["beginBasDt"] = in.BeginDate
 	}
 	if in.EndDate != "" {
-		q.Set("endBasDt", in.EndDate)
+		params["endBasDt"] = in.EndDate
 	}
-	req.URL.RawQuery = q.Encode()
 
-	body, statusCode, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	body, statusCode, err := client.do(ctx, "/GetMarketIndexInfoService/getStockMarketIndex", params)
 	if err != nil {
 		if statusCode == http.StatusForbidden {
 			return toolError("지수 시세 API 호출 권한이 없습니다 (Forbidden). 공공데이터포털에서 '금융위원회_지수시세정보' API 활용 신청이 승인되었는지 확인해 주세요."), nil, nil

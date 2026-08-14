@@ -49,8 +49,27 @@ func RegisterBook(s *mcp.Server) {
 	}, withRecover("get_recommended_books", getRecommendedBooks))
 }
 
+type BookHTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+type nlClient struct {
+	httpClient BookHTTPDoer
+	baseURL    string
+	apiKey     string
+}
+
+func NewNLCClient(client BookHTTPDoer, baseURL, apiKey string) *nlClient {
+	return &nlClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+}
+func defaultNLCClient() *nlClient {
+	return NewNLCClient(httpclient.Default, "https://nl.go.kr", config.NationalLibraryAPIKey)
+}
+
 func getRecommendedBooks(ctx context.Context, _ *mcp.CallToolRequest, in bookInput) (*mcp.CallToolResult, any, error) {
-	if config.NationalLibraryAPIKey == "" {
+	return getRecommendedBooksWithClient(ctx, defaultNLCClient(), in)
+}
+func getRecommendedBooksWithClient(ctx context.Context, client *nlClient, in bookInput) (*mcp.CallToolResult, any, error) {
+	if client.apiKey == "" {
 		return toolError("NATIONAL_LIBRARY_API_KEY가 설정되지 않았습니다"), nil, nil
 	}
 
@@ -63,12 +82,12 @@ func getRecommendedBooks(ctx context.Context, _ *mcp.CallToolRequest, in bookInp
 		endNum = 5
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://nl.go.kr/NL/search/openApi/saseoApi.do", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", client.baseURL+"/NL/search/openApi/saseoApi.do", nil)
 	if err != nil {
 		return toolError("요청 생성 실패: %v", err), nil, nil
 	}
 	q := req.URL.Query()
-	q.Set("Key", config.NationalLibraryAPIKey)
+	q.Set("Key", client.apiKey)
 	q.Set("startRowNumApi", fmt.Sprintf("%d", startNum))
 	q.Set("endRowNumApi", fmt.Sprintf("%d", endNum))
 	if code, ok := bookCategoryMap[in.Category]; ok {
@@ -82,7 +101,7 @@ func getRecommendedBooks(ctx context.Context, _ *mcp.CallToolRequest, in bookInp
 	}
 	req.URL.RawQuery = q.Encode()
 
-	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	body, _, err := httpclient.FetchBodyWithClient(client.httpClient, req, maxAPIBodyBytes)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}

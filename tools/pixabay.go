@@ -25,8 +25,27 @@ func RegisterPixabay(s *mcp.Server) {
 	}, withRecover("search_pixabay_images", searchPixabayImages))
 }
 
+type PixabayHTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+type pixabayClient struct {
+	httpClient PixabayHTTPDoer
+	baseURL    string
+	apiKey     string
+}
+
+func NewPixabayClient(client PixabayHTTPDoer, baseURL, apiKey string) *pixabayClient {
+	return &pixabayClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+}
+func defaultPixabayClient() *pixabayClient {
+	return NewPixabayClient(httpclient.Default, "https://pixabay.com/api", config.PixabayAPIKey)
+}
+
 func searchPixabayImages(ctx context.Context, _ *mcp.CallToolRequest, in pixabayInput) (*mcp.CallToolResult, any, error) {
-	if config.PixabayAPIKey == "" {
+	return searchPixabayImagesWithClient(ctx, defaultPixabayClient(), in)
+}
+func searchPixabayImagesWithClient(ctx context.Context, client *pixabayClient, in pixabayInput) (*mcp.CallToolResult, any, error) {
+	if client.apiKey == "" {
 		return toolError("PIXABAY_API_KEY가 설정되지 않았습니다"), nil, nil
 	}
 
@@ -42,19 +61,19 @@ func searchPixabayImages(ctx context.Context, _ *mcp.CallToolRequest, in pixabay
 		imageType = "all"
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://pixabay.com/api/", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", client.baseURL+"/", nil)
 	if err != nil {
 		return toolError("요청 생성 실패: %v", err), nil, nil
 	}
 	q := req.URL.Query()
-	q.Set("key", config.PixabayAPIKey)
+	q.Set("key", client.apiKey)
 	q.Set("q", in.Query)
 	q.Set("image_type", imageType)
 	q.Set("per_page", fmt.Sprintf("%d", perPage))
 	q.Set("safesearch", "true")
 	req.URL.RawQuery = q.Encode()
 
-	body, status, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	body, status, err := httpclient.FetchBodyWithClient(client.httpClient, req, maxAPIBodyBytes)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}

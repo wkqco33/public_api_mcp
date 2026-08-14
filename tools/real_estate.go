@@ -13,10 +13,10 @@ import (
 )
 
 var realEstateEndpoints = map[string]string{
-	"apt_trade": "http://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade",
-	"apt_rent":  "http://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent",
-	"rh_trade":  "http://apis.data.go.kr/1613000/RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade",
-	"rh_rent":   "http://apis.data.go.kr/1613000/RTMSDataSvcRHRent/getRTMSDataSvcRHRent",
+	"apt_trade": "/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade",
+	"apt_rent":  "/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent",
+	"rh_trade":  "/1613000/RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade",
+	"rh_rent":   "/1613000/RTMSDataSvcRHRent/getRTMSDataSvcRHRent",
 }
 
 var realEstateTitles = map[string]string{
@@ -53,8 +53,27 @@ func RegisterRealEstate(s *mcp.Server) {
 	}, withRecover("get_real_estate_data", getRealEstateData))
 }
 
+type RealEstateHTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+type realEstateClient struct {
+	httpClient RealEstateHTTPDoer
+	baseURL    string
+	apiKey     string
+}
+
+func NewRealEstateClient(client RealEstateHTTPDoer, baseURL, apiKey string) *realEstateClient {
+	return &realEstateClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+}
+func defaultRealEstateClient() *realEstateClient {
+	return NewRealEstateClient(httpclient.Default, "http://apis.data.go.kr", config.PublicDataPortalAPIKey)
+}
+
 func getRealEstateData(ctx context.Context, _ *mcp.CallToolRequest, in realEstateInput) (*mcp.CallToolResult, any, error) {
-	if config.PublicDataPortalAPIKey == "" {
+	return getRealEstateDataWithClient(ctx, defaultRealEstateClient(), in)
+}
+func getRealEstateDataWithClient(ctx context.Context, client *realEstateClient, in realEstateInput) (*mcp.CallToolResult, any, error) {
+	if client.apiKey == "" {
 		return toolError("PUBLIC_DATA_PORTAL_API_KEY가 설정되지 않았습니다"), nil, nil
 	}
 
@@ -68,19 +87,19 @@ func getRealEstateData(ctx context.Context, _ *mcp.CallToolRequest, in realEstat
 		numOfRows = 10
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", client.baseURL+endpoint, nil)
 	if err != nil {
 		return toolError("요청 생성 실패: %v", err), nil, nil
 	}
 	q := req.URL.Query()
-	q.Set("serviceKey", config.PublicDataPortalAPIKey)
+	q.Set("serviceKey", client.apiKey)
 	q.Set("LAWD_CD", in.LawdCd)
 	q.Set("DEAL_YMD", in.DealYmd)
 	q.Set("pageNo", "1")
 	q.Set("numOfRows", fmt.Sprintf("%d", numOfRows))
 	req.URL.RawQuery = q.Encode()
 
-	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	body, _, err := httpclient.FetchBodyWithClient(client.httpClient, req, maxAPIBodyBytes)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}

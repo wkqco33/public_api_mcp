@@ -41,16 +41,48 @@ func RegisterTransport(s *mcp.Server) {
 	}, withRecover("get_subway_arrival", getSubwayArrival))
 }
 
+type TransportHTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+type busClient struct {
+	httpClient TransportHTTPDoer
+	baseURL    string
+	apiKey     string
+}
+
+func NewBusClient(client TransportHTTPDoer, baseURL, apiKey string) *busClient {
+	return &busClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+}
+func defaultBusClient() *busClient {
+	return NewBusClient(httpclient.Default, "http://apis.data.go.kr/1613000", config.PublicDataPortalAPIKey)
+}
+
+type subwayClient struct {
+	httpClient TransportHTTPDoer
+	baseURL    string
+	apiKey     string
+}
+
+func NewSubwayClient(client TransportHTTPDoer, baseURL, apiKey string) *subwayClient {
+	return &subwayClient{httpClient: client, baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey}
+}
+func defaultSubwayClient() *subwayClient {
+	return NewSubwayClient(httpclient.Default, "http://swopenapi.seoul.go.kr/api/subway", config.SeoulOpenAPIKey)
+}
+
 func busAPIGet(ctx context.Context, path string, params map[string]string) ([]any, error) {
-	if config.PublicDataPortalAPIKey == "" {
+	return busAPIGetWithClient(ctx, defaultBusClient(), path, params)
+}
+func busAPIGetWithClient(ctx context.Context, client *busClient, path string, params map[string]string) ([]any, error) {
+	if client.apiKey == "" {
 		return nil, fmt.Errorf("PUBLIC_DATA_PORTAL_API_KEY가 설정되지 않았습니다")
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://apis.data.go.kr/1613000/"+path, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", client.baseURL+"/"+path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("요청 생성 실패: %w", err)
 	}
 	q := req.URL.Query()
-	q.Set("serviceKey", config.PublicDataPortalAPIKey)
+	q.Set("serviceKey", client.apiKey)
 	q.Set("numOfRows", "10")
 	q.Set("pageNo", "1")
 	q.Set("_type", "json")
@@ -59,7 +91,7 @@ func busAPIGet(ctx context.Context, path string, params map[string]string) ([]an
 	}
 	req.URL.RawQuery = q.Encode()
 
-	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	body, _, err := httpclient.FetchBodyWithClient(client.httpClient, req, maxAPIBodyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -82,11 +114,14 @@ func busAPIGet(ctx context.Context, path string, params map[string]string) ([]an
 }
 
 func searchBusStop(ctx context.Context, _ *mcp.CallToolRequest, in busStopSearchInput) (*mcp.CallToolResult, any, error) {
+	return searchBusStopWithClient(ctx, defaultBusClient(), in)
+}
+func searchBusStopWithClient(ctx context.Context, client *busClient, in busStopSearchInput) (*mcp.CallToolResult, any, error) {
 	cityCode := in.CityCode
 	if cityCode == "" {
 		cityCode = "11"
 	}
-	items, err := busAPIGet(ctx, "BusSttnInfoInqireService/getSttnNoList", map[string]string{
+	items, err := busAPIGetWithClient(ctx, client, "BusSttnInfoInqireService/getSttnNoList", map[string]string{
 		"cityCode": cityCode,
 		"nodeNm":   in.StopName,
 	})
@@ -110,11 +145,14 @@ func searchBusStop(ctx context.Context, _ *mcp.CallToolRequest, in busStopSearch
 }
 
 func getBusArrival(ctx context.Context, _ *mcp.CallToolRequest, in busArrivalInput) (*mcp.CallToolResult, any, error) {
+	return getBusArrivalWithClient(ctx, defaultBusClient(), in)
+}
+func getBusArrivalWithClient(ctx context.Context, client *busClient, in busArrivalInput) (*mcp.CallToolResult, any, error) {
 	cityCode := in.CityCode
 	if cityCode == "" {
 		cityCode = "11"
 	}
-	items, err := busAPIGet(ctx, "ArvlInfoInqireForOrganicVehicle/getSttnAcctoArvlPrearngeInfoList", map[string]string{
+	items, err := busAPIGetWithClient(ctx, client, "ArvlInfoInqireForOrganicVehicle/getSttnAcctoArvlPrearngeInfoList", map[string]string{
 		"cityCode": cityCode,
 		"nodeId":   in.NodeID,
 	})
@@ -142,17 +180,19 @@ func getBusArrival(ctx context.Context, _ *mcp.CallToolRequest, in busArrivalInp
 }
 
 func getSubwayArrival(ctx context.Context, _ *mcp.CallToolRequest, in subwayArrivalInput) (*mcp.CallToolResult, any, error) {
-	if config.SeoulOpenAPIKey == "" {
+	return getSubwayArrivalWithClient(ctx, defaultSubwayClient(), in)
+}
+func getSubwayArrivalWithClient(ctx context.Context, client *subwayClient, in subwayArrivalInput) (*mcp.CallToolResult, any, error) {
+	if client.apiKey == "" {
 		return toolError("SEOUL_OPEN_API_KEY가 설정되지 않았습니다"), nil, nil
 	}
 
-	url := fmt.Sprintf("http://swopenapi.seoul.go.kr/api/subway/%s/json/realtimeStationArrival/0/10/%s",
-		config.SeoulOpenAPIKey, in.StationName)
+	url := fmt.Sprintf("%s/%s/json/realtimeStationArrival/0/10/%s", client.baseURL, client.apiKey, in.StationName)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return toolError("요청 생성 실패: %v", err), nil, nil
 	}
-	body, _, err := httpclient.FetchBody(req, maxAPIBodyBytes)
+	body, _, err := httpclient.FetchBodyWithClient(client.httpClient, req, maxAPIBodyBytes)
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}
