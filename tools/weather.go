@@ -54,15 +54,28 @@ type weatherForecastInput struct {
 	Days     int    `json:"days,omitempty" jsonschema:"예보 일수 1~3 (기본: 1)"`
 }
 
+type WeatherClock interface{ Now() time.Time }
+type systemWeatherClock struct{}
+
+func (systemWeatherClock) Now() time.Time { return time.Now() }
+
 func RegisterWeather(s *mcp.Server) {
+	RegisterWeatherWithClock(s, systemWeatherClock{})
+}
+
+func RegisterWeatherWithClock(s *mcp.Server, clock WeatherClock) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_current_weather",
 		Description: "기상청 초단기실황으로 현재 날씨(기온, 습도, 강수, 풍속) 조회.",
-	}, withRecover("get_current_weather", getCurrentWeather))
+	}, withRecover("get_current_weather", func(ctx context.Context, req *mcp.CallToolRequest, in weatherInput) (*mcp.CallToolResult, any, error) {
+		return getCurrentWeatherWithClock(ctx, clock, in)
+	}))
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_weather_forecast",
 		Description: "기상청 단기예보로 시간대별 날씨 예보 조회 (1~3일).",
-	}, withRecover("get_weather_forecast", getWeatherForecast))
+	}, withRecover("get_weather_forecast", func(ctx context.Context, req *mcp.CallToolRequest, in weatherForecastInput) (*mcp.CallToolResult, any, error) {
+		return getWeatherForecastWithClock(ctx, clock, in)
+	}))
 }
 
 func loadKMALocations() {
@@ -141,18 +154,22 @@ func findLocation(name string) *kmaLocation {
 	return found
 }
 
-func kmaBaseTimeNcst() (string, string) {
+func kmaBaseTimeNcst() (string, string) { return kmaBaseTimeNcstAt(time.Now()) }
+
+func kmaBaseTimeNcstAt(current time.Time) (string, string) {
 	kst := time.FixedZone("KST", 9*60*60)
-	now := time.Now().In(kst)
+	now := current.In(kst)
 	if now.Minute() < 10 {
 		now = now.Add(-time.Hour)
 	}
 	return now.Format("20060102"), now.Format("15") + "00"
 }
 
-func kmaBaseTimeVilage() (string, string) {
+func kmaBaseTimeVilage() (string, string) { return kmaBaseTimeVilageAt(time.Now()) }
+
+func kmaBaseTimeVilageAt(current time.Time) (string, string) {
 	kst := time.FixedZone("KST", 9*60*60)
-	now := time.Now().In(kst)
+	now := current.In(kst)
 	times := []int{2, 5, 8, 11, 14, 17, 20, 23}
 	hour := now.Hour()
 	if now.Minute() < 10 {
@@ -208,6 +225,10 @@ func kmaGet(ctx context.Context, endpoint string, params map[string]string) (map
 }
 
 func getCurrentWeather(ctx context.Context, _ *mcp.CallToolRequest, in weatherInput) (*mcp.CallToolResult, any, error) {
+	return getCurrentWeatherWithClock(ctx, systemWeatherClock{}, in)
+}
+
+func getCurrentWeatherWithClock(ctx context.Context, clock WeatherClock, in weatherInput) (*mcp.CallToolResult, any, error) {
 	loc := findLocation(in.Location)
 	if loc == nil {
 		return toolError("'%s' 지역을 찾을 수 없습니다", in.Location), nil, nil
@@ -220,7 +241,7 @@ func getCurrentWeather(ctx context.Context, _ *mcp.CallToolRequest, in weatherIn
 	}
 	slog.Debug("날씨 API 조회", "location", in.Location, "nx", loc.NX, "ny", loc.NY)
 
-	baseDate, baseTime := kmaBaseTimeNcst()
+	baseDate, baseTime := kmaBaseTimeNcstAt(clock.Now())
 	body, err := kmaGet(ctx, "getUltraSrtNcst", map[string]string{
 		"numOfRows": "10",
 		"base_date": baseDate,
@@ -262,6 +283,10 @@ func getCurrentWeather(ctx context.Context, _ *mcp.CallToolRequest, in weatherIn
 }
 
 func getWeatherForecast(ctx context.Context, _ *mcp.CallToolRequest, in weatherForecastInput) (*mcp.CallToolResult, any, error) {
+	return getWeatherForecastWithClock(ctx, systemWeatherClock{}, in)
+}
+
+func getWeatherForecastWithClock(ctx context.Context, clock WeatherClock, in weatherForecastInput) (*mcp.CallToolResult, any, error) {
 	loc := findLocation(in.Location)
 	if loc == nil {
 		return toolError("'%s' 지역을 찾을 수 없습니다", in.Location), nil, nil
@@ -282,7 +307,7 @@ func getWeatherForecast(ctx context.Context, _ *mcp.CallToolRequest, in weatherF
 	}
 	slog.Debug("예보 API 조회", "location", in.Location, "days", days)
 
-	baseDate, baseTime := kmaBaseTimeVilage()
+	baseDate, baseTime := kmaBaseTimeVilageAt(clock.Now())
 	numRows := days * 24 * 12
 	body, err := kmaGet(ctx, "getVilageFcst", map[string]string{
 		"numOfRows": fmt.Sprintf("%d", numRows),
