@@ -206,16 +206,38 @@ func kmaBaseTimeVilageAt(current time.Time) (string, string) {
 	return now.Format("20060102"), fmt.Sprintf("%02d00", best)
 }
 
-func kmaGet(ctx context.Context, endpoint string, params map[string]string) (map[string]any, error) {
+type kmaItem struct {
+	Category  string `json:"category"`
+	ObsrValue string `json:"obsrValue"`
+	FcstDate  string `json:"fcstDate"`
+	FcstTime  string `json:"fcstTime"`
+	FcstValue string `json:"fcstValue"`
+}
+type kmaBody struct {
+	Items struct {
+		Item []kmaItem `json:"item"`
+	} `json:"items"`
+}
+type kmaAPIResponse struct {
+	Response struct {
+		Header struct {
+			ResultCode string `json:"resultCode"`
+			ResultMsg  string `json:"resultMsg"`
+		} `json:"header"`
+		Body kmaBody `json:"body"`
+	} `json:"response"`
+}
+
+func kmaGet(ctx context.Context, endpoint string, params map[string]string) (kmaBody, error) {
 	return kmaGetWithClient(ctx, defaultWeatherClient(), endpoint, params)
 }
-func kmaGetWithClient(ctx context.Context, client *WeatherClient, endpoint string, params map[string]string) (map[string]any, error) {
+func kmaGetWithClient(ctx context.Context, client *WeatherClient, endpoint string, params map[string]string) (kmaBody, error) {
 	if client.apiKey == "" {
-		return nil, fmt.Errorf("KMA_WEATHER_API_KEY가 설정되지 않았습니다")
+		return kmaBody{}, fmt.Errorf("KMA_WEATHER_API_KEY가 설정되지 않았습니다")
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", client.baseURL+"/"+endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("요청 생성 실패: %w", err)
+		return kmaBody{}, fmt.Errorf("요청 생성 실패: %w", err)
 	}
 	q := req.URL.Query()
 	q.Set("serviceKey", client.apiKey)
@@ -228,21 +250,17 @@ func kmaGetWithClient(ctx context.Context, client *WeatherClient, endpoint strin
 
 	body, _, err := httpclient.FetchBodyWithClient(client.httpClient, req, maxAPIBodyBytes)
 	if err != nil {
-		return nil, err
+		return kmaBody{}, err
 	}
 
-	var data map[string]any
+	var data kmaAPIResponse
 	if err := json.Unmarshal(body, &data); err != nil {
-		return nil, fmt.Errorf("응답 파싱 실패: %v", err)
+		return kmaBody{}, fmt.Errorf("응답 파싱 실패: %v", err)
 	}
-	response, _ := data["response"].(map[string]any)
-	header, _ := response["header"].(map[string]any)
-	if code, _ := header["resultCode"].(string); code != "00" && code != "0" {
-		msg, _ := header["resultMsg"].(string)
-		return nil, fmt.Errorf("KMA API 오류: %s", msg)
+	if code := data.Response.Header.ResultCode; code != "00" && code != "0" {
+		return kmaBody{}, fmt.Errorf("KMA API 오류: %s", data.Response.Header.ResultMsg)
 	}
-	respBody, _ := response["body"].(map[string]any)
-	return respBody, nil
+	return data.Response.Body, nil
 }
 
 func getCurrentWeather(ctx context.Context, _ *mcp.CallToolRequest, in weatherInput) (*mcp.CallToolResult, any, error) {
@@ -277,14 +295,9 @@ func getCurrentWeatherWithDependencies(ctx context.Context, client *WeatherClien
 		return toolError("%v", err), nil, nil
 	}
 
-	items_, _ := body["items"].(map[string]any)
-	itemList, _ := items_["item"].([]any)
 	vals := map[string]string{}
-	for _, raw := range itemList {
-		item, _ := raw.(map[string]any)
-		cat, _ := item["category"].(string)
-		val, _ := item["obsrValue"].(string)
-		vals[cat] = val
+	for _, item := range body.Items.Item {
+		vals[item.Category] = item.ObsrValue
 	}
 
 	region := strings.TrimSpace(loc.Step1 + " " + loc.Step2 + " " + loc.Step3)
@@ -347,9 +360,6 @@ func getWeatherForecastWithDependencies(ctx context.Context, client *WeatherClie
 		return toolError("%v", err), nil, nil
 	}
 
-	items_, _ := body["items"].(map[string]any)
-	itemList, _ := items_["item"].([]any)
-
 	type slot struct {
 		date string
 		time string
@@ -357,12 +367,8 @@ func getWeatherForecastWithDependencies(ctx context.Context, client *WeatherClie
 	}
 	slots := map[string]*slot{}
 	var slotOrder []string
-	for _, raw := range itemList {
-		item, _ := raw.(map[string]any)
-		fDate, _ := item["fcstDate"].(string)
-		fTime, _ := item["fcstTime"].(string)
-		cat, _ := item["category"].(string)
-		val, _ := item["fcstValue"].(string)
+	for _, item := range body.Items.Item {
+		fDate, fTime, cat, val := item.FcstDate, item.FcstTime, item.Category, item.FcstValue
 		key := fDate + fTime
 		if _, ok := slots[key]; !ok {
 			slots[key] = &slot{date: fDate, time: fTime, vals: map[string]string{}}

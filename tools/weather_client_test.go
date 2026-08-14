@@ -25,8 +25,7 @@ func TestWeatherClientUsesInjectedHTTPClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	items, _ := body["items"].(map[string]any)
-	list, _ := items["item"].([]any)
+	list := body.Items.Item
 	if len(list) != 1 || !strings.Contains(string(mustJSON(t, list[0])), "21") {
 		t.Fatalf("unexpected decoded body: %#v", body)
 	}
