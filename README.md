@@ -64,10 +64,38 @@ task --list
 ```bash
 task check       # gofmt 검사 + go vet + race 테스트
 task test        # race detector 포함 전체 테스트
-task test-cover  # 커버리지 리포트 생성
+task test-cover  # 커버리지 리포트 생성 (coverage.html)
 ```
 
 외부 API 테스트는 기본적으로 로컬 `httptest.Server`를 사용하므로 네트워크나 API 키가 필요하지 않습니다. 실제 API를 호출하는 테스트는 기본 테스트에 포함하지 않습니다.
+
+#### 테스트 의존성 주입 원칙
+
+각 외부 API 도구는 생성자에서 의존성을 주입받도록 구성되어 있어 단위 테스트가 용이합니다.
+
+```go
+// 카카오 예시
+client := tools.NewKakaoClient(
+    testServer.Client(), // *http.Client
+    testServer.URL,      // base URL
+    "test-key",          // API 키
+)
+
+result, _, _ := tools.GetRecommendedBooksWithClient(
+    context.Background(),
+    client,
+    tools.BookInput{},
+)
+```
+
+주입 가능한 의존성:
+
+- **HTTP client** — 모든 API 도구
+- **base URL** — 카카오, 환율, 날씨, 주식, 교통, 유가, 부동산, 도서, Pixabay, DART
+- **API 키** — 모든 API 도구
+- **Clock** — 환율, 날씨
+
+이 구조 덕분에 각 도구는 전역 설정이나 공유 HTTP transport를 수정하지 않고도 성공/실패 응답, 인증, 응답 파싱, 출력 포맷을 독립적으로 테스트합니다. 카카오는 검증·포맷팅·응답 디코딩을 별도 파일로 분리해 각각 순수 함수로 테스트합니다.
 
 ---
 
@@ -445,10 +473,14 @@ public_api_mcp/
 ├── cache/
 │   └── cache.go         # 제네릭 TTL 캐시
 ├── httpclient/
-│   └── client.go        # 공유 HTTP 클라이언트 (debug RoundTripper)
+│   └── client.go        # 공유 HTTP 클라이언트 + FetchBodyWithClient + URL 마스킹
 └── tools/
-    ├── util.go           # 공유 헬퍼 (toolText, toolError)
+    ├── util.go           # 공유 헬퍼 (toolText, toolError, withRecover)
     ├── kakao.go          # Kakao Daum 검색/Local API (7개)
+    ├── kakao_model.go    # 카카오 응답 모델
+    ├── kakao_validation.go
+    ├── kakao_formatter.go
+    ├── kakao_decode.go
     ├── exchange.go       # 환율 (1개)
     ├── fuel.go           # 유가 (3개)
     ├── stock.go          # 주식 (3개)
@@ -456,8 +488,13 @@ public_api_mcp/
     ├── transport.go      # 버스/지하철 (3개)
     ├── weather.go        # 날씨 (2개)
     ├── dart.go           # DART 공시 (5개)
+    ├── dart_corp_codes.go
+    ├── dart_corp_store.go
+    ├── dart_corp_download.go
     ├── web.go            # 뉴스/URL 가져오기 (2개)
     ├── book.go           # 도서 (1개)
     ├── pixabay.go        # 이미지 (1개)
     └── http_request.go   # 범용 HTTP (1개)
 ```
+
+> 각 외부 API 도구는 `NewXxxClient(httpDoer, baseURL, apiKey)` 형태의 생성자를 제공합니다. HTTP client·base URL·API 키(필요 시 Clock)를 주입받아 테스트에서 실제 네트워크와 API 키 없이 검증할 수 있습니다. 상세 구조와 테스트 원칙은 아래 **테스트 및 TDD 개발** 및 각 소스 파일의 주석을 참고하세요.

@@ -48,9 +48,10 @@ tasks:
       - go test -race ./...
 
   test-cover:
-    desc: 커버리지 리포트 생성 (coverage.html)
+    desc: 패키지별 커버리지 요약 출력 + HTML 리포트 생성
     cmds:
       - go test -race -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out | tail -1
       - go tool cover -html=coverage.out -o coverage.html
       - 'echo "커버리지 리포트: coverage.html"'
 
