@@ -5,33 +5,32 @@
     <key>Label</key>
     <string>com.wkqcosoft.public-api-mcp</string>
 
-    <!-- 바이너리 경로와 실행 인자 -->
+    <key>WorkingDirectory</key>
+    <string>/Users/youngchaeseo/Services/public-api-mcp/current</string>
+
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/public-api-mcp</string>
+        <string>/Users/youngchaeseo/Services/public-api-mcp/current/public-api-mcp</string>
         <string>--env</string>
-        <string>/Users/USERNAME/.config/public-api-mcp/env</string>
+        <string>/Users/youngchaeseo/Services/public-api-mcp/shared/.env</string>
         <string>serve</string>
         <string>http</string>
         <string>--addr</string>
         <string>127.0.0.1:18080</string>
     </array>
 
-    <!-- 로그인 시 자동 시작 -->
     <key>RunAtLoad</key>
     <true/>
 
-    <!-- 프로세스 종료 시 자동 재시작 -->
     <key>KeepAlive</key>
     <true/>
 
-    <!-- 표준 출력/에러 로그 경로 -->
     <key>StandardOutPath</key>
-    <string>/tmp/public-api-mcp.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/public-api-mcp.err</string>
+    <string>/Users/youngchaeseo/Services/public-api-mcp/shared/logs/stdout.log</string>
 
-    <!-- 재시작 간격 (초) -->
+    <key>StandardErrorPath</key>
+    <string>/Users/youngchaeseo/Services/public-api-mcp/shared/logs/stderr.log</string>
+
     <key>ThrottleInterval</key>
     <integer>5</integer>
 </dict>
